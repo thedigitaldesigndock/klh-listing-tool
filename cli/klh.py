@@ -26,8 +26,19 @@ def _cmd_token(args):
 
 
 def _cmd_match(args):
-    print("match: not yet implemented — Phase 1")
-    sys.exit(2)
+    from pipeline import matcher
+    argv = []
+    if args.picture_dir:
+        argv += ["--picture-dir", str(args.picture_dir)]
+    if args.card_dir:
+        argv += ["--card-dir", str(args.card_dir)]
+    if args.json:
+        argv.append("--json")
+    if args.fix:
+        argv.append("--fix")
+    if args.no_color:
+        argv.append("--no-color")
+    sys.exit(matcher.main(argv))
 
 
 def _cmd_stub(args):
@@ -47,9 +58,14 @@ def main():
     p_token.add_argument("--force", action="store_true", help="force a refresh now")
     p_token.set_defaults(func=_cmd_token)
 
-    sub.add_parser("match", help="pair pictures with cards").set_defaults(
-        func=_cmd_match
-    )
+    p_match = sub.add_parser("match", help="pair pictures with cards")
+    p_match.add_argument("--picture-dir", help="override picture_dir from config")
+    p_match.add_argument("--card-dir", help="override card_dir from config")
+    p_match.add_argument("--json", action="store_true", help="JSON output")
+    p_match.add_argument("--fix", action="store_true",
+                         help="interactively apply rename suggestions")
+    p_match.add_argument("--no-color", action="store_true")
+    p_match.set_defaults(func=_cmd_match)
 
     for name in ("normalize", "mockup", "list"):
         p = sub.add_parser(name, help=f"{name} (not yet implemented)")

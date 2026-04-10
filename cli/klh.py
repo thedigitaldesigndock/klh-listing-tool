@@ -5,8 +5,8 @@ Subcommands dispatched here:
     klh config       — show resolved config (debug)
     klh token        — show eBay token status / force refresh
     klh match        — (Phase 1) pair pictures with cards, report issues
-    klh normalize    — (Phase 2) not yet implemented
-    klh mockup       — (Phase 3) not yet implemented
+    klh normalize    — (Phase 2) convert non-JPG sources to JPEG in-place
+    klh mockup       — (Phase 3) render a mockup from a template
     klh list         — (Phase 6) not yet implemented
 """
 
@@ -40,6 +40,26 @@ def _cmd_match(args):
     if args.no_color:
         argv.append("--no-color")
     sys.exit(matcher.main(argv))
+
+
+def _cmd_normalize(args):
+    from pipeline import normalize
+    argv: list[str] = []
+    if args.picture_dir:
+        argv += ["--picture-dir", str(args.picture_dir)]
+    if args.card_dir:
+        argv += ["--card-dir", str(args.card_dir)]
+    if args.only:
+        argv += ["--only", args.only]
+    if args.quality is not None:
+        argv += ["--quality", str(args.quality)]
+    if args.keep_originals:
+        argv.append("--keep-originals")
+    if args.dry_run:
+        argv.append("--dry-run")
+    if args.no_color:
+        argv.append("--no-color")
+    sys.exit(normalize.main(argv))
 
 
 def _cmd_mockup(args):
@@ -80,6 +100,17 @@ def main():
     p_match.add_argument("--no-color", action="store_true")
     p_match.set_defaults(func=_cmd_match)
 
+    p_norm = sub.add_parser("normalize",
+                            help="convert non-JPG sources to JPEG in-place")
+    p_norm.add_argument("--picture-dir", type=Path)
+    p_norm.add_argument("--card-dir", type=Path)
+    p_norm.add_argument("--only", choices=("picture", "card"))
+    p_norm.add_argument("--quality", type=int, default=None)
+    p_norm.add_argument("--keep-originals", action="store_true")
+    p_norm.add_argument("--dry-run", action="store_true")
+    p_norm.add_argument("--no-color", action="store_true")
+    p_norm.set_defaults(func=_cmd_normalize)
+
     p_mockup = sub.add_parser("mockup", help="render a mockup from a template")
     p_mockup.add_argument("--template", required=True, help="template id (slug)")
     p_mockup.add_argument("--picture", type=Path, help="picture source path")
@@ -88,7 +119,7 @@ def main():
     p_mockup.add_argument("--out", type=Path, required=True, help="output file path")
     p_mockup.set_defaults(func=_cmd_mockup)
 
-    for name in ("normalize", "list"):
+    for name in ("list",):
         p = sub.add_parser(name, help=f"{name} (not yet implemented)")
         p.set_defaults(func=_cmd_stub, which=name)
 

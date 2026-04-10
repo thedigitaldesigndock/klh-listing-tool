@@ -1,0 +1,62 @@
+# Shared listing defaults for KLHAutographs.
+#
+# These values are applied to every listing and can be overridden
+# per-product (in products.yaml) or per-listing (at lister call time).
+# Values here were taken directly from Kim's live active listings —
+# see tests/fixtures/ebay_samples/ for the raw GetItem payloads.
+#
+# Trading API semantic names are used (ConditionID, DispatchTimeMax,
+# ReturnsAcceptedOption, …) so this file maps 1:1 onto AddFixedPriceItem.
+
+marketplace:
+  site: EBAY_GB
+  country: GB
+  currency: GBP
+  location: "Manchester, Lancashire"
+  postal_code: null   # leave null to inherit seller address
+
+listing:
+  listing_type: FixedPriceItem
+  listing_duration: GTC     # Good 'Til Cancelled
+  condition_id: 1000        # 1000 = New (matches Kim's current A4 Photo listings)
+  quantity: 1
+  dispatch_time_max: 1      # days
+  best_offer_enabled: false
+  private_listing: false
+
+# Free 2nd class with a paid next-day upgrade — lifted verbatim from the
+# shipping service options on active listings.
+shipping:
+  type: Flat
+  services:
+    - service: UK_RoyalMailSecondClassStandard
+      cost: 0.00
+      free: true
+      priority: 1
+    - service: UK_RoyalMailSpecialDeliveryNextDay
+      cost: 9.95
+      priority: 2
+  global_shipping: false    # Kim handles her own international
+
+return_policy:
+  returns_accepted: true
+  within: Days_30
+  shipping_cost_paid_by: Buyer
+  refund_option: MoneyBack
+  description: null
+
+# Minimum Item Specifics applied to every listing. Per-product presets
+# can add more and individual listings can add/override (e.g. Player,
+# Team, Year Signed, Show Title).
+item_specifics:
+  "Country of Origin": "United Kingdom"
+  "Signed": "Yes"
+  "Original/Reproduction": "Original"
+
+# Description template (HTML). The body lives in description_template.html
+# and is loaded alongside this file. The only required placeholder is
+# {size_clause} — per-product presets fill that in.
+description:
+  template_file: description_template.html
+  required_placeholders:
+    - size_clause

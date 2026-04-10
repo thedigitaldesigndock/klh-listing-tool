@@ -1,0 +1,42 @@
+{
+  "source_psd": "/Volumes/Samsung_990_4TB/KLH/Products/16x12-D Frame.psd",
+  "canvas": [
+    3600,
+    4641
+  ],
+  "picture_bbox": [
+    820,
+    570,
+    2768,
+    3492
+  ],
+  "card_bbox": null,
+  "text_container": {
+    "name": "TEXT BOX",
+    "kind": "shape",
+    "bbox": [
+      1285,
+      3657,
+      2308,
+      3991
+    ]
+  },
+  "signed_by": {
+    "bbox": [
+      1616,
+      3751,
+      1986,
+      3789
+    ],
+    "text": "Personally Signed By"
+  },
+  "name_layer": {
+    "bbox": [
+      1542,
+      3802,
+      2056,
+      3876
+    ],
+    "text": "Name Here"
+  }
+}

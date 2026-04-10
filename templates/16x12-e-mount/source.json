@@ -1,0 +1,42 @@
+{
+  "source_psd": "/Volumes/Samsung_990_4TB/KLH/Products/16x12-E Mount.psd",
+  "canvas": [
+    4800,
+    3600
+  ],
+  "picture_bbox": [
+    1189,
+    559,
+    3614,
+    2499
+  ],
+  "card_bbox": null,
+  "text_container": {
+    "name": "TEXT BOX",
+    "kind": "smartobject",
+    "bbox": [
+      1890,
+      2682,
+      2910,
+      3013
+    ]
+  },
+  "signed_by": {
+    "bbox": [
+      2217,
+      2773,
+      2586,
+      2811
+    ],
+    "text": "Personally Signed By"
+  },
+  "name_layer": {
+    "bbox": [
+      2143,
+      2825,
+      2656,
+      2899
+    ],
+    "text": "Name Here"
+  }
+}

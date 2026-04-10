@@ -12,6 +12,7 @@ Subcommands dispatched here:
 
 import argparse
 import sys
+from pathlib import Path
 
 
 def _cmd_config(args):
@@ -41,6 +42,18 @@ def _cmd_match(args):
     sys.exit(matcher.main(argv))
 
 
+def _cmd_mockup(args):
+    from pipeline import compositor
+    argv = ["--template", args.template, "--out", str(args.out)]
+    if args.picture:
+        argv += ["--picture", str(args.picture)]
+    if args.card:
+        argv += ["--card", str(args.card)]
+    if args.name:
+        argv += ["--name", args.name]
+    sys.exit(compositor.main(argv))
+
+
 def _cmd_stub(args):
     print(f"{args.which}: not yet implemented")
     sys.exit(2)
@@ -67,7 +80,15 @@ def main():
     p_match.add_argument("--no-color", action="store_true")
     p_match.set_defaults(func=_cmd_match)
 
-    for name in ("normalize", "mockup", "list"):
+    p_mockup = sub.add_parser("mockup", help="render a mockup from a template")
+    p_mockup.add_argument("--template", required=True, help="template id (slug)")
+    p_mockup.add_argument("--picture", type=Path, help="picture source path")
+    p_mockup.add_argument("--card", type=Path, help="card source path")
+    p_mockup.add_argument("--name", help="display name (defaults to picture stem)")
+    p_mockup.add_argument("--out", type=Path, required=True, help="output file path")
+    p_mockup.set_defaults(func=_cmd_mockup)
+
+    for name in ("normalize", "list"):
         p = sub.add_parser(name, help=f"{name} (not yet implemented)")
         p.set_defaults(func=_cmd_stub, which=name)
 

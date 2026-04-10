@@ -1,0 +1,47 @@
+{
+  "source_psd": "/Volumes/Samsung_990_4TB/KLH/Products/A4-A Frame.psdt",
+  "canvas": [
+    3973,
+    3006
+  ],
+  "picture_bbox": [
+    695,
+    661,
+    1762,
+    2262
+  ],
+  "card_bbox": [
+    1991,
+    763,
+    3311,
+    1554
+  ],
+  "text_container": {
+    "name": "TEXT BOX",
+    "kind": "smartobject",
+    "bbox": [
+      1980,
+      1782,
+      3298,
+      2151
+    ]
+  },
+  "signed_by": {
+    "bbox": [
+      2361,
+      1877,
+      2914,
+      1934
+    ],
+    "text": "Personally Signed By"
+  },
+  "name_layer": {
+    "bbox": [
+      2286,
+      1939,
+      2985,
+      2056
+    ],
+    "text": "Claus Jensen"
+  }
+}

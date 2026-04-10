@@ -1,0 +1,44 @@
+id: 16x12-f-frame
+name: 16x12-F Frame
+source_psd: 16x12-F Frame.psd
+canvas:
+- 3600
+- 4641
+slots:
+  picture:
+    bbox:
+    - 820
+    - 712
+    - 2770
+    - 3150
+    scale_mode: fit_width_center
+    background: '#000000'
+text:
+- id: signed_by
+  content: Personally Signed By
+  bbox:
+  - 1308
+  - 3593
+  - 2281
+  - 3631
+  font: Cambria
+  size: 38
+  align: center
+  anchor: middle
+- id: name
+  content: '{name}'
+  bbox:
+  - 1308
+  - 3644
+  - 2281
+  - 3718
+  font: Cambria
+  size_range:
+  - 60
+  - 96
+  align: center
+  anchor: middle
+output:
+  format: jpg
+  quality: 92
+  max_dimension: null

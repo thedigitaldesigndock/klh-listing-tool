@@ -1,0 +1,44 @@
+id: 16x12-e-frame
+name: 16x12-E Frame
+source_psd: 16x12-E Frame.psd
+canvas:
+- 4800
+- 3600
+slots:
+  picture:
+    bbox:
+    - 1189
+    - 559
+    - 3614
+    - 2499
+    scale_mode: fit_width_center
+    background: '#000000'
+text:
+- id: signed_by
+  content: Personally Signed By
+  bbox:
+  - 1906
+  - 2774
+  - 2879
+  - 2812
+  font: Cambria
+  size: 38
+  align: center
+  anchor: middle
+- id: name
+  content: '{name}'
+  bbox:
+  - 1906
+  - 2826
+  - 2879
+  - 2900
+  font: Cambria
+  size_range:
+  - 60
+  - 96
+  align: center
+  anchor: middle
+output:
+  format: jpg
+  quality: 92
+  max_dimension: null

@@ -1,0 +1,20 @@
+id: 10x8-mount-port
+name: 10x8 Mount Port
+source_psd: 10x8 Mount Port.psdt
+canvas:
+- 2787
+- 3388
+slots:
+  picture:
+    bbox:
+    - 794
+    - 794
+    - 1994
+    - 2594
+    scale_mode: fit_width_center
+    background: '#000000'
+text: []
+output:
+  format: jpg
+  quality: 92
+  max_dimension: null

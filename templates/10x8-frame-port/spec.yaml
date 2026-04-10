@@ -1,0 +1,20 @@
+id: 10x8-frame-port
+name: 10x8 Frame Port
+source_psd: 10x8 Frame Port.psdt
+canvas:
+- 1087
+- 1307
+slots:
+  picture:
+    bbox:
+    - 337
+    - 345
+    - 751
+    - 968
+    scale_mode: fit_width_center
+    background: '#000000'
+text: []
+output:
+  format: jpg
+  quality: 92
+  max_dimension: null

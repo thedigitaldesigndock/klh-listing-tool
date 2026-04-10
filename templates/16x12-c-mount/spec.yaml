@@ -1,0 +1,44 @@
+id: 16x12-c-mount
+name: 16x12-C Mount
+source_psd: 16x12-C Mount.psd
+canvas:
+- 4800
+- 3600
+slots:
+  picture:
+    bbox:
+    - 939
+    - 546
+    - 3867
+    - 2499
+    scale_mode: fit_width_center
+    background: '#000000'
+text:
+- id: signed_by
+  content: Personally Signed By
+  bbox:
+  - 1906
+  - 2764
+  - 2879
+  - 2802
+  font: Cambria
+  size: 38
+  align: center
+  anchor: middle
+- id: name
+  content: '{name}'
+  bbox:
+  - 1906
+  - 2816
+  - 2879
+  - 2890
+  font: Cambria
+  size_range:
+  - 60
+  - 96
+  align: center
+  anchor: middle
+output:
+  format: jpg
+  quality: 92
+  max_dimension: null

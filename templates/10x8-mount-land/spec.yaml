@@ -1,0 +1,20 @@
+id: 10x8-mount-land
+name: 10x8 Mount Land
+source_psd: 10x8 Mount Land.psdt
+canvas:
+- 3388
+- 2787
+slots:
+  picture:
+    bbox:
+    - 806
+    - 750
+    - 2606
+    - 1950
+    scale_mode: fit_width_center
+    background: '#000000'
+text: []
+output:
+  format: jpg
+  quality: 92
+  max_dimension: null

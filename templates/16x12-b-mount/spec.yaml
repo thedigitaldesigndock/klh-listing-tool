@@ -1,0 +1,52 @@
+id: 16x12-b-mount
+name: 16x12-B Mount
+source_psd: 16x12-B Mount.psd
+canvas:
+- 4800
+- 3600
+slots:
+  picture:
+    bbox:
+    - 762
+    - 553
+    - 2720
+    - 3000
+    scale_mode: fit_width_center
+    background: '#000000'
+  card:
+    bbox:
+    - 3069
+    - 780
+    - 4021
+    - 2207
+    scale_mode: fit_cover
+    background: null
+text:
+- id: signed_by
+  content: Personally Signed By
+  bbox:
+  - 3090
+  - 2508
+  - 3999
+  - 2546
+  font: Cambria
+  size: 38
+  align: center
+  anchor: middle
+- id: name
+  content: '{name}'
+  bbox:
+  - 3090
+  - 2558
+  - 3999
+  - 2634
+  font: Cambria
+  size_range:
+  - 60
+  - 98
+  align: center
+  anchor: middle
+output:
+  format: jpg
+  quality: 92
+  max_dimension: null

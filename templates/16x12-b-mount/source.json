@@ -1,0 +1,47 @@
+{
+  "source_psd": "/Volumes/Samsung_990_4TB/KLH/Products/16x12-B Mount.psd",
+  "canvas": [
+    4800,
+    3600
+  ],
+  "picture_bbox": [
+    762,
+    553,
+    2720,
+    3000
+  ],
+  "card_bbox": [
+    3069,
+    780,
+    4021,
+    2207
+  ],
+  "text_container": {
+    "name": "TEXT BOX",
+    "kind": "shape",
+    "bbox": [
+      3067,
+      2414,
+      4022,
+      2737
+    ]
+  },
+  "signed_by": {
+    "bbox": [
+      3359,
+      2508,
+      3728,
+      2546
+    ],
+    "text": "Personally Signed By"
+  },
+  "name_layer": {
+    "bbox": [
+      3213,
+      2558,
+      3872,
+      2634
+    ],
+    "text": "Sir Bobby Robson"
+  }
+}

@@ -1,0 +1,44 @@
+id: 16x12-d-mount
+name: 16x12-D Mount
+source_psd: 16x12-D Mount.psd
+canvas:
+- 3600
+- 4553
+slots:
+  picture:
+    bbox:
+    - 820
+    - 540
+    - 2768
+    - 3462
+    scale_mode: fit_width_center
+    background: '#000000'
+text:
+- id: signed_by
+  content: Personally Signed By
+  bbox:
+  - 1310
+  - 3721
+  - 2283
+  - 3759
+  font: Cambria
+  size: 38
+  align: center
+  anchor: middle
+- id: name
+  content: '{name}'
+  bbox:
+  - 1310
+  - 3772
+  - 2283
+  - 3846
+  font: Cambria
+  size_range:
+  - 60
+  - 96
+  align: center
+  anchor: middle
+output:
+  format: jpg
+  quality: 92
+  max_dimension: null

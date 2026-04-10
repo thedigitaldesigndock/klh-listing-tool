@@ -1,0 +1,44 @@
+id: 16x12-f-mount
+name: 16x12-F Mount
+source_psd: 16x12-F Mount.psd
+canvas:
+- 3600
+- 4641
+slots:
+  picture:
+    bbox:
+    - 832
+    - 728
+    - 2782
+    - 3166
+    scale_mode: fit_width_center
+    background: '#000000'
+text:
+- id: signed_by
+  content: Personally Signed By
+  bbox:
+  - 1320
+  - 3609
+  - 2293
+  - 3647
+  font: Cambria
+  size: 38
+  align: center
+  anchor: middle
+- id: name
+  content: '{name}'
+  bbox:
+  - 1320
+  - 3660
+  - 2293
+  - 3734
+  font: Cambria
+  size_range:
+  - 60
+  - 96
+  align: center
+  anchor: middle
+output:
+  format: jpg
+  quality: 92
+  max_dimension: null

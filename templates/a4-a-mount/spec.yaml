@@ -1,0 +1,52 @@
+id: a4-a-mount
+name: A4-A Mount
+source_psd: A4-A Mount.psdt
+canvas:
+- 3973
+- 3006
+slots:
+  picture:
+    bbox:
+    - 536
+    - 554
+    - 1731
+    - 2347
+    scale_mode: fit_width_center
+    background: '#000000'
+  card:
+    bbox:
+    - 1987
+    - 668
+    - 3465
+    - 1554
+    scale_mode: fit_cover
+    background: null
+text:
+- id: signed_by
+  content: Personally Signed By
+  bbox:
+  - 2010
+  - 1926
+  - 3416
+  - 1983
+  font: Cambria
+  size: 57
+  align: center
+  anchor: middle
+- id: name
+  content: '{name}'
+  bbox:
+  - 2010
+  - 1988
+  - 3416
+  - 2105
+  font: Cambria
+  size_range:
+  - 60
+  - 152
+  align: center
+  anchor: middle
+output:
+  format: jpg
+  quality: 92
+  max_dimension: null

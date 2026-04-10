@@ -1,0 +1,44 @@
+id: 16x12-e-mount
+name: 16x12-E Mount
+source_psd: 16x12-E Mount.psd
+canvas:
+- 4800
+- 3600
+slots:
+  picture:
+    bbox:
+    - 1189
+    - 559
+    - 3614
+    - 2499
+    scale_mode: fit_width_center
+    background: '#000000'
+text:
+- id: signed_by
+  content: Personally Signed By
+  bbox:
+  - 1915
+  - 2773
+  - 2885
+  - 2811
+  font: Cambria
+  size: 38
+  align: center
+  anchor: middle
+- id: name
+  content: '{name}'
+  bbox:
+  - 1915
+  - 2825
+  - 2885
+  - 2899
+  font: Cambria
+  size_range:
+  - 60
+  - 96
+  align: center
+  anchor: middle
+output:
+  format: jpg
+  quality: 92
+  max_dimension: null

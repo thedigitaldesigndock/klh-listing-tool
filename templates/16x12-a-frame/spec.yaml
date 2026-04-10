@@ -1,0 +1,52 @@
+id: 16x12-a-frame
+name: 16x12-A Frame
+source_psd: 16x12-A Frame.psd
+canvas:
+- 4800
+- 3600
+slots:
+  picture:
+    bbox:
+    - 679
+    - 553
+    - 2637
+    - 3000
+    scale_mode: fit_width_center
+    background: '#000000'
+  card:
+    bbox:
+    - 2891
+    - 1091
+    - 4112
+    - 1800
+    scale_mode: fit_cover
+    background: null
+text:
+- id: signed_by
+  content: Personally Signed By
+  bbox:
+  - 3014
+  - 2225
+  - 3987
+  - 2263
+  font: Cambria
+  size: 38
+  align: center
+  anchor: middle
+- id: name
+  content: '{name}'
+  bbox:
+  - 3014
+  - 2277
+  - 3987
+  - 2351
+  font: Cambria
+  size_range:
+  - 60
+  - 96
+  align: center
+  anchor: middle
+output:
+  format: jpg
+  quality: 92
+  max_dimension: null

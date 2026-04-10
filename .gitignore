@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Editor / OS
+.DS_Store
+.vscode/
+.idea/
+*.swp
+
+# Credentials — should NEVER be in this repo anyway
+# (they live in ~/.klh/) but defence-in-depth:
+.env
+tokens.json
+*.pem
+*-key.pem
+
+# Large binary working data
+data/
+working/
+*.jpg
+*.jpeg
+*.png
+*.psd
+*.psdt
+*.tif
+*.tiff
+
+# Allow template assets explicitly (needed in git)
+!templates/**/*.png
+!templates/**/*.jpg
+!tests/fixtures/**/*.jpg
+!tests/fixtures/**/*.png

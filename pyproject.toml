@@ -1,0 +1,26 @@
+[project]
+name = "klh-listing-tool"
+version = "0.1.0"
+description = "eBay listing automation for KLHAutographs"
+requires-python = ">=3.11"
+dependencies = [
+    "pillow>=10.0",
+    "pyyaml>=6.0",
+    "python-Levenshtein>=0.23",
+    "requests>=2.31",
+]
+
+[project.optional-dependencies]
+psd = ["psd-tools>=1.10"]
+dev = ["pytest>=7.0"]
+
+[project.scripts]
+klh = "cli.klh:main"
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["ebay_api*", "pipeline*", "cli*"]
+exclude = ["tests*"]

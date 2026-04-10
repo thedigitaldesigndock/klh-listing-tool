@@ -368,11 +368,14 @@ def build_listing(
         "price_gbp": float(price_gbp if price_gbp is not None else product.default_price_gbp),
         "sku": sku,
         "category_id": category_id,
-        "marketplace":   copy.deepcopy(bundle.defaults.get("marketplace", {})),
-        "listing":       copy.deepcopy(bundle.defaults.get("listing", {})),
-        "shipping":      copy.deepcopy(bundle.defaults.get("shipping", {})),
-        "return_policy": copy.deepcopy(bundle.defaults.get("return_policy", {})),
-        "item_specifics": copy.deepcopy(bundle.defaults.get("item_specifics", {})),
+        "marketplace":      copy.deepcopy(bundle.defaults.get("marketplace", {})),
+        "listing":          copy.deepcopy(bundle.defaults.get("listing", {})),
+        "seller_profiles":  copy.deepcopy(bundle.defaults.get("seller_profiles", {})),
+        # shipping + return_policy kept for documentation only; the lister
+        # uses seller_profiles when the account is on Business Policies.
+        "shipping":         copy.deepcopy(bundle.defaults.get("shipping", {})),
+        "return_policy":    copy.deepcopy(bundle.defaults.get("return_policy", {})),
+        "item_specifics":   copy.deepcopy(bundle.defaults.get("item_specifics", {})),
     }
 
     # Merge in caller-supplied item specifics (e.g. Player, Team, Year Signed).

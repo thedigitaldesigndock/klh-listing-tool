@@ -221,6 +221,29 @@ def test_build_listing_shape():
     assert listing["item_specifics"]["Signed"] == "Yes"
 
 
+def test_build_listing_includes_seller_profiles():
+    bundle = presets.load(PRESETS_DIR)
+    listing = presets.build_listing(
+        bundle,
+        product_key="a4_photo",
+        name="Tim Allen",
+    )
+    sp = listing["seller_profiles"]
+    assert sp["payment_profile_id"]  == "226381763024"
+    assert sp["return_profile_id"]   == "226381757024"
+    assert sp["shipping_profile_id"] == "226588406024"
+
+
+def test_build_listing_has_postal_code():
+    bundle = presets.load(PRESETS_DIR)
+    listing = presets.build_listing(
+        bundle,
+        product_key="a4_photo",
+        name="Tim Allen",
+    )
+    assert listing["marketplace"]["postal_code"] == "M29 8DL"
+
+
 def test_build_listing_price_override():
     bundle = presets.load(PRESETS_DIR)
     listing = presets.build_listing(

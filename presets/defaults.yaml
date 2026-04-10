@@ -13,7 +13,18 @@ marketplace:
   country: GB
   currency: GBP
   location: "Manchester, Lancashire"
-  postal_code: null   # leave null to inherit seller address
+  postal_code: "M29 8DL"    # verified from all captured samples
+
+# Kim's account is opted into eBay Business Policies (confirmed by
+# SellerProfiles present on every captured GetItem sample). When
+# policies are active, AddFixedPriceItem MUST reference profile IDs
+# rather than inline ShippingDetails / ReturnPolicy. The shipping:
+# and return_policy: sections below are kept as documentation only —
+# the lister uses the IDs here to wire up each listing.
+seller_profiles:
+  payment_profile_id:  "226381763024"   # "eBay Managed Payments"
+  return_profile_id:   "226381757024"   # "30 days"
+  shipping_profile_id: "226588406024"   # "UK 2nd/T48/T24/SP"
 
 listing:
   listing_type: FixedPriceItem

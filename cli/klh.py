@@ -7,7 +7,10 @@ Subcommands dispatched here:
     klh match        — (Phase 1) pair pictures with cards, report issues
     klh normalize    — (Phase 2) convert non-JPG sources to JPEG in-place
     klh mockup       — (Phase 3) render a mockup from a template
-    klh list         — (Phase 6) not yet implemented
+    klh verify       — (Phase 6) dry-run a listing via VerifyAddFixedPriceItem
+    klh schedule     — (Phase 6) create a scheduled listing (--at ISO8601)
+    klh list         — (Phase 6) create a live listing now (--confirm)
+    klh unlist       — (Phase 6) end an active listing
 """
 
 import argparse
@@ -119,9 +122,9 @@ def main():
     p_mockup.add_argument("--out", type=Path, required=True, help="output file path")
     p_mockup.set_defaults(func=_cmd_mockup)
 
-    for name in ("list",):
-        p = sub.add_parser(name, help=f"{name} (not yet implemented)")
-        p.set_defaults(func=_cmd_stub, which=name)
+    # Phase 6: verify / schedule / list / unlist — wired from cli.list_cmd
+    from cli import list_cmd
+    list_cmd.register(sub)
 
     args = parser.parse_args()
     args.func(args)

@@ -428,6 +428,83 @@ def end_listing(
 
 
 # --------------------------------------------------------------------------- #
+# Out-of-stock control (SetUserPreferences + ReviseInventoryStatus)
+# --------------------------------------------------------------------------- #
+#
+# Kim's business goal: when a 1-of-1 signed item sells, we want the
+# listing to STAY (hidden from search) rather than end, so we can
+# simply restock it with a newly-signed item of the same person and
+# keep all the accrued search history, watchers, and item ID. This
+# requires two things:
+#
+#   1. Seller account opt-in to OutOfStockControl via SetUserPreferences.
+#      Done once per account; persistent.
+#   2. ReviseInventoryStatus to change Quantity on a specific item
+#      without having to call ReviseFixedPriceItem (which is heavier
+#      and can re-verify / throw away search ranking).
+#
+# CLI:
+#   klh preferences out-of-stock-control --enable
+#   klh preferences out-of-stock-control --status
+#   klh outofstock <item_id>          → sets Quantity=0
+#   klh restock    <item_id> [--qty N]   → sets Quantity=N (default 1)
+#
+
+def set_out_of_stock_control(enabled: bool) -> dict[str, Any]:
+    """
+    Enable (or disable) the seller-account OutOfStockControl preference.
+
+    When enabled, zero-quantity fixed-price listings stay ACTIVE but are
+    hidden from search/browse. Sellers can then call ReviseInventoryStatus
+    to put Quantity back up and the listing reappears. Persists across
+    sessions.
+    """
+    flag = "true" if enabled else "false"
+    inner = (
+        f"<OutOfStockControlPreference>{flag}</OutOfStockControlPreference>"
+    )
+    root = trading_call("SetUserPreferences", inner)
+    return {"ack": _text(root, "e:Ack"), "enabled": enabled}
+
+
+def get_out_of_stock_control() -> bool:
+    """
+    Read the current OutOfStockControl preference via GetUserPreferences.
+    Returns True if enabled.
+    """
+    inner = "<ShowOutOfStockControlPreference>true</ShowOutOfStockControlPreference>"
+    root = trading_call("GetUserPreferences", inner)
+    val = _text(root, "e:OutOfStockControlPreference")
+    return (val or "").lower() == "true"
+
+
+def set_item_quantity(item_id: str, quantity: int) -> dict[str, Any]:
+    """
+    Change a fixed-price item's Quantity via ReviseInventoryStatus.
+
+    Much lighter than ReviseFixedPriceItem — no re-verification, no
+    search-ranking churn. This is the correct verb for routine
+    stock / out-of-stock toggles.
+    """
+    if quantity < 0:
+        raise ListerError("quantity must be ≥ 0")
+    inner = (
+        f"<InventoryStatus>"
+        f"{_el('ItemID', item_id)}"
+        f"{_el('Quantity', str(quantity))}"
+        f"</InventoryStatus>"
+    )
+    root = trading_call("ReviseInventoryStatus", inner)
+    inv = root.find("e:InventoryStatus", NS_MAP)
+    return {
+        "ack":      _text(root, "e:Ack"),
+        "item_id":  item_id,
+        "quantity": int(_text(inv, "e:Quantity") or quantity) if inv is not None else quantity,
+        "fees":     [f.tag for f in root.findall("e:Fees/e:Fee", NS_MAP)],
+    }
+
+
+# --------------------------------------------------------------------------- #
 # Picture upload (UploadSiteHostedPictures)
 # --------------------------------------------------------------------------- #
 
@@ -444,24 +521,91 @@ def upload_site_hosted_picture(
     Kim's current listings use and gives the best zoom.
 
     Implementation notes:
-      * Trading's UploadSiteHostedPictures accepts two transport modes
-        — a base64 <PictureData> element, or a multipart/form-data POST.
-        Base64 in XML is simpler and uses exactly the same endpoint /
-        headers as every other Trading call, so we use that.
+      * UploadSiteHostedPictures is the only Trading verb that expects
+        multipart/form-data rather than a text/xml envelope. The body
+        has two parts: the XML request (with a placeholder PictureData
+        element), and the binary image bytes. Inline base64 is allowed
+        by the API but eBay's picture service rejects it as "corrupt"
+        in practice — multipart is the documented correct transport.
       * Files over ~12MB should be resized before calling this —
         bigger than that and eBay throttles.
     """
+    import urllib.error
+    import urllib.request
+    from ebay_api.trading import TRADING_ENDPOINT, TRADING_VERSION, _site_id_for
+    from ebay_api.token_manager import _load_env, get_access_token
+
     path = Path(path)
     if not path.exists():
         raise ListerError(f"picture not found: {path}")
 
-    encoded = base64.b64encode(path.read_bytes()).decode("ascii")
-    inner = (
+    # XML request part — element order matters (eBay's schema is strict).
+    # The binary bytes are sent as the second MIME part; no PictureData
+    # element here for multipart uploads.
+    xml_body = (
+        f'<?xml version="1.0" encoding="utf-8"?>'
+        f'<UploadSiteHostedPicturesRequest xmlns="{NS}">'
         f"{_el('PictureSet', picture_set)}"
         f"<PictureUploadPolicy>Add</PictureUploadPolicy>"
-        f"<PictureData contentType=\"{_guess_mime(path)}\">{encoded}</PictureData>"
+        f'</UploadSiteHostedPicturesRequest>'
+    ).encode("utf-8")
+
+    image_bytes = path.read_bytes()
+
+    boundary = "MIME_boundary_klh_upload_pictures"
+    crlf = b"\r\n"
+    body = b"".join([
+        b"--", boundary.encode(), crlf,
+        b'Content-Disposition: form-data; name="XML Payload"', crlf,
+        b"Content-Type: text/xml; charset=utf-8", crlf,
+        crlf,
+        xml_body, crlf,
+        b"--", boundary.encode(), crlf,
+        b'Content-Disposition: form-data; name="image"; filename="',
+        path.name.encode(), b'"', crlf,
+        f"Content-Type: {_guess_mime(path)}".encode(), crlf,
+        b"Content-Transfer-Encoding: binary", crlf,
+        crlf,
+        image_bytes, crlf,
+        b"--", boundary.encode(), b"--", crlf,
+    ])
+
+    env = _load_env()
+    token = get_access_token()
+    req = urllib.request.Request(TRADING_ENDPOINT, data=body)
+    req.add_header("X-EBAY-API-COMPATIBILITY-LEVEL", TRADING_VERSION)
+    req.add_header("X-EBAY-API-CALL-NAME", "UploadSiteHostedPictures")
+    req.add_header("X-EBAY-API-SITEID", _site_id_for(env))
+    req.add_header("X-EBAY-API-IAF-TOKEN", token)
+    # Unquoted boundary — eBay's multipart parser trips on quoted forms.
+    req.add_header(
+        "Content-Type",
+        f"multipart/form-data; boundary={boundary}",
     )
-    root = trading_call("UploadSiteHostedPictures", inner)
+
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            raw = resp.read()
+    except urllib.error.HTTPError as e:
+        err_body = e.read().decode(errors="replace")
+        raise TradingError(
+            f"UploadSiteHostedPictures HTTP {e.code}: {err_body[:500]}"
+        ) from e
+
+    try:
+        root = ET.fromstring(raw)
+    except ET.ParseError as e:
+        raise TradingError(f"UploadSiteHostedPictures returned invalid XML: {e}") from e
+
+    ack = root.findtext("e:Ack", default="", namespaces=NS_MAP)
+    if ack not in ("Success", "Warning"):
+        err = root.find("e:Errors", NS_MAP)
+        if err is not None:
+            short = err.findtext("e:ShortMessage", default="", namespaces=NS_MAP)
+            long = err.findtext("e:LongMessage", default="", namespaces=NS_MAP)
+            raise TradingError(f"UploadSiteHostedPictures failed: {short} — {long}")
+        raise TradingError(f"UploadSiteHostedPictures failed with Ack={ack!r}")
+
     site_hosted = root.find("e:SiteHostedPictureDetails", NS_MAP)
     if site_hosted is None:
         raise TradingError("UploadSiteHostedPictures returned no SiteHostedPictureDetails")

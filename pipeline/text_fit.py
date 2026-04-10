@@ -78,10 +78,15 @@ def fit_size(
     w_pad: int = 0,
     h_pad: int = 0,
     step: int = 2,
+    stroke_width: int = 0,
 ) -> tuple[int, ImageFont.FreeTypeFont]:
     """
     Find the largest integer font size in `size_range` where `text` fits
     in `(box_w - 2*w_pad) x (box_h - 2*h_pad)`. Returns (size, font).
+
+    `stroke_width` is used when measuring so that fake-bold (stroke) text
+    is still guaranteed to fit — each glyph grows by ~stroke_width px on
+    every side when drawn with a stroke.
     """
     lo, hi = size_range
     target_w = box_w - 2 * w_pad
@@ -97,7 +102,14 @@ def fit_size(
     size = hi
     while size >= lo:
         font = load_font(family, size)
-        w, h = _text_extent(draw, text, font)
+        # Measure with the same stroke the caller will draw with so our
+        # fit calculation accounts for fake-bold growth.
+        left, top, right, bottom = draw.textbbox(
+            (0, 0), text, font=font, anchor="lt",
+            stroke_width=stroke_width,
+        )
+        w = right - left
+        h = bottom - top
         if w <= target_w and h <= target_h:
             best = size
             best_font = font
@@ -117,6 +129,7 @@ def draw_text_in_box(
     fill: tuple[int, int, int] = (0, 0, 0),
     align: str = "center",
     anchor: str = "middle",
+    bold: bool = False,
 ) -> None:
     """
     Draw `text` into `bbox` on `img`.
@@ -125,38 +138,69 @@ def draw_text_in_box(
     If `size_range` is given, auto-fit within the range.
     `align` controls horizontal placement (left/center/right).
     `anchor` controls vertical placement (top/middle/bottom).
+    `bold` uses PIL's stroke_width to fake-bold (since Cambria Bold
+    isn't installed on the Mac used for authoring mockups).
     """
     x1, y1, x2, y2 = bbox
     box_w = x2 - x1
     box_h = y2 - y1
 
+    # Fake-bold: stroke width scales with font size. A lighter stroke
+    # (px/80) gives a semi-bold look that matches Kim's goldens without
+    # going into heavy-black weight.
+    def _stroke_for(px: int) -> int:
+        if not bold:
+            return 0
+        return max(1, round(px / 80))
+
     if size_range is not None:
-        px, font = fit_size(text, family, box_w, box_h, tuple(size_range))
+        # First fit without stroke to pick a starting size, then re-fit
+        # with the stroke width implied by that size.
+        px0, _ = fit_size(text, family, box_w, box_h, tuple(size_range))
+        stroke = _stroke_for(px0)
+        px, font = fit_size(
+            text, family, box_w, box_h, tuple(size_range),
+            stroke_width=stroke,
+        )
+        stroke = _stroke_for(px)
     else:
         assert size is not None, "Either size or size_range must be provided"
-        font = load_font(family, int(size))
+        px = int(size)
+        font = load_font(family, px)
+        stroke = _stroke_for(px)
 
     draw = ImageDraw.Draw(img)
 
-    # Measure the actual pixel extent so we can position precisely.
-    left, top, right, bottom = draw.textbbox(
-        (0, 0), text, font=font, anchor="lt"
-    )
-    w = right - left
-    h = bottom - top
+    # Use PIL's native anchor system for placement. This gives us font-
+    # metric-based vertical positioning (so descenders in one name like
+    # "Zian Flemming" don't shift the cap top relative to another name
+    # like "Seamus Coleman" at the same font size) AND consistent
+    # horizontal behaviour with strokes.
+    #
+    # PIL anchor chars:
+    #   horizontal: l=left, m=middle, r=right
+    #   vertical:   a=ascender top, m=font middle, d=descender bottom,
+    #               s=baseline, t=tight top, b=tight bottom
+    h_char = {"left": "l", "right": "r"}.get(align, "m")
+    v_char = {"top": "a", "bottom": "d"}.get(anchor, "m")
+    pil_anchor = h_char + v_char
 
     if align == "left":
-        tx = x1 - left
+        ax = x1
     elif align == "right":
-        tx = x2 - w - left
+        ax = x2
     else:  # center
-        tx = x1 + (box_w - w) // 2 - left
+        ax = (x1 + x2) // 2
 
     if anchor == "top":
-        ty = y1 - top
+        ay = y1
     elif anchor == "bottom":
-        ty = y2 - h - top
+        ay = y2
     else:  # middle
-        ty = y1 + (box_h - h) // 2 - top
+        ay = (y1 + y2) // 2
 
-    draw.text((tx, ty), text, font=font, fill=fill)
+    draw.text(
+        (ax, ay), text, font=font, fill=fill,
+        anchor=pil_anchor,
+        stroke_width=stroke, stroke_fill=fill,
+    )

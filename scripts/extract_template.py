@@ -40,8 +40,10 @@ CARD_NAMES = {"CARD", "Card", "card"}
 FONT_NAME = "Cambria"
 
 # Size ranges for fit-to-box text (pixels at template's native DPI).
-SIGNED_BY_DEFAULT_SIZE = 44       # fixed size for the static label
-NAME_SIZE_RANGE = (60, 160)       # min/max pixel size for the variable name
+# Values calibrated against Kim's A4-A Mount goldens and scaled proportionally
+# by the extractor for other templates.
+SIGNED_BY_DEFAULT_SIZE = 62       # fixed size for the static label
+NAME_SIZE_RANGE = (60, 133)       # min/max pixel size for the variable name
 
 
 def _slugify(stem: str) -> str:
@@ -199,24 +201,28 @@ def _compute_text_regions(scan: dict) -> list[dict]:
 
     if name_layer and name_layer.bbox:
         nx1, ny1, nx2, ny2 = name_layer.bbox
-        cur_h = ny2 - ny1
-        # Allow text to grow up to ~1.4x the current height when the name is short,
-        # but never exceed NAME_SIZE_RANGE hard limits.
-        max_size = min(NAME_SIZE_RANGE[1], max(NAME_SIZE_RANGE[0] + 10, int(cur_h * 1.3)))
-        min_size = NAME_SIZE_RANGE[0]
+        # The PSD's tight bbox on the "Text Box 2" layer is much narrower
+        # than Kim's actual x-budget (measured in the goldens). Widen it
+        # symmetrically around the text layer centre to match a4-a-mount's
+        # 1200px budget (ratio-scaled for other templates).
+        if container and container.bbox:
+            cx1, _, cx2, _ = container.bbox
+            cont_w = cx2 - cx1
+            # On A4-A Mount, Kim's name x-budget is ~1200 out of container
+            # width ~1477 ≈ 0.812. Apply same ratio on other templates.
+            widen = int(round(cont_w * 0.812))
+            mid_x = (nx1 + nx2) // 2
+            nx1 = mid_x - widen // 2
+            nx2 = mid_x + widen // 2
         entries.append({
             "id": "name",
             "content": "{name}",
-            "bbox": [
-                x_left if x_left is not None else nx1,
-                ny1,
-                x_right if x_right is not None else nx2,
-                ny2,
-            ],
+            "bbox": [nx1, ny1, nx2, ny2],
             "font": FONT_NAME,
-            "size_range": [min_size, max_size],
+            "size_range": list(NAME_SIZE_RANGE),
             "align": "center",
             "anchor": "middle",
+            "bold": True,
         })
 
     return entries
@@ -250,6 +256,99 @@ def _render_base(psd: PSDImage, scan: dict) -> "PIL.Image.Image":
         for layer in psd.descendants():
             layer.visible = saved[layer.layer_id]
 
+    return img
+
+
+def _identify_overlay_layers(psd: PSDImage, scan: dict) -> list[int]:
+    """
+    Identify the "mount top" layers — raster layers that sit ABOVE the
+    PICTURE / CARD smart objects in the PSD z-order. These are the mount
+    edges / aperture cut-outs that should draw on TOP of our pasted
+    picture and card in the final composite.
+
+    Approach: walk psd.descendants() which yields layers bottom-to-top.
+    Any raster ('pixel') layer whose index is greater than the PICTURE /
+    CARD smart object layers is part of the overlay.
+
+    Text (type), shape, and smartobject layers are deliberately excluded
+    — the text is rendered by our own text_fit pass, the PICTURE/CARD
+    smart objects are empty placeholders, and the TEXT BOX shape is part
+    of the mount front which we DO want on the overlay (it sits above
+    picture/card so the decorative plate overlays any card overflow).
+    """
+    # Find the highest z-order index of PICTURE / CARD.
+    slot_ids = {
+        scan[k].layer_id
+        for k in ("picture", "card")
+        if scan[k] and scan[k].layer_id is not None
+    }
+    if not slot_ids:
+        return []
+
+    all_layers = list(psd.descendants())
+    # z_index: position in iteration order (bottom-to-top).
+    max_slot_z = -1
+    for i, layer in enumerate(all_layers):
+        if layer.layer_id in slot_ids:
+            max_slot_z = max(max_slot_z, i)
+    if max_slot_z < 0:
+        return []
+
+    # Layers to include in the overlay = everything strictly above the
+    # top slot layer, excluding text and the decorative TEXT BOX plate
+    # (we render those ourselves via text_fit).
+    hide_text_ids: set[int] = set()
+    for key in ("signed_by", "name"):
+        if scan[key] and scan[key].layer_id is not None:
+            hide_text_ids.add(scan[key].layer_id)
+
+    overlay_ids: list[int] = []
+    for i, layer in enumerate(all_layers):
+        if i <= max_slot_z:
+            continue
+        if layer.layer_id in hide_text_ids:
+            continue
+        if layer.kind == "type":
+            continue
+        # Group layers have no raster content of their own; their
+        # children are already in the descendants() list.
+        if layer.kind == "group":
+            continue
+        overlay_ids.append(layer.layer_id)
+    return overlay_ids
+
+
+def _render_overlay(psd: PSDImage, scan: dict) -> Optional["PIL.Image.Image"]:
+    """
+    Render an RGBA overlay image containing only the mount layers that
+    sit above PICTURE/CARD in the PSD. Areas where the mount has its
+    aperture cut-out will be transparent so the underlying pasted
+    picture / card can show through when the compositor alpha-composites
+    the overlay on top.
+
+    Returns None if there are no overlay layers (e.g. templates where
+    the mount sits entirely below the picture).
+    """
+    overlay_ids = _identify_overlay_layers(psd, scan)
+    if not overlay_ids:
+        return None
+
+    keep = set(overlay_ids)
+    saved: dict[int, bool] = {}
+    for layer in psd.descendants():
+        saved[layer.layer_id] = layer.visible
+        layer.visible = layer.layer_id in keep
+
+    try:
+        img = psd.composite()
+    finally:
+        for layer in psd.descendants():
+            layer.visible = saved[layer.layer_id]
+
+    if img is None:
+        return None
+    if img.mode != "RGBA":
+        img = img.convert("RGBA")
     return img
 
 
@@ -298,10 +397,21 @@ def extract(psd_path: Path, out_root: Path) -> Path:
     with open(spec_path, "w") as f:
         yaml.safe_dump(spec, f, sort_keys=False, default_flow_style=False)
 
-    # Render base
+    # Render base (mount with PICTURE/CARD/text layers hidden — this is
+    # the background everything gets pasted onto).
     base = _render_base(psd, scan)
     base_path = slug_dir / "base.png"
     base.save(base_path)
+
+    # Render overlay (mount layers that sit ABOVE picture/card in z-order;
+    # these get alpha-composited OVER the pasted picture+card so the mount
+    # edges tuck over the picture edges, as in Photoshop). Optional.
+    overlay = _render_overlay(psd, scan)
+    overlay_path = slug_dir / "overlay.png"
+    if overlay is not None:
+        overlay.save(overlay_path)
+    elif overlay_path.exists():
+        overlay_path.unlink()
 
     # Tiny preview
     preview = base.copy()

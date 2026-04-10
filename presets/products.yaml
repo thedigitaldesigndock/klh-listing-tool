@@ -5,9 +5,36 @@
 # products — the klh-listing-tool template ID that composites the
 # mockup image.
 #
-# Title patterns use {name} for the signed personality and {qualifier}
-# for an optional trailing phrase (club, show, "Ghostbusters", etc.).
-# Trailing " {qualifier}" inserts nothing when qualifier is empty.
+# TITLE STRATEGY (revised, see conversation notes)
+# ------------------------------------------------
+# Only two things change between listings: the signer's {name} and —
+# very rarely — an optional {qualifier_suffix}. Everything else is
+# keyword-packed boilerplate tuned for eBay search:
+#
+#   * "Signed" + "Autograph" + "Hand Signed" (where room allows) cover
+#     the three distinct buyer searches for authenticity terms.
+#   * "Photo" is in every title — it's the single biggest buyer-search
+#     term for signed memorabilia on eBay UK.
+#   * "Memorabilia" hits the category-browse long-tail.
+#   * "Mount Display" / "Framed Photo Display" is the product term
+#     (already matches Kim's existing bestsellers).
+#   * "+COA" is in every title because Kim likes it there; the synonyms
+#     (Cert / LOA / Letter of Authorisation / Certificate) live in the
+#     Q&A-hack item specifics in defaults.yaml rather than eating title
+#     characters.
+#   * Team / show / film / sport is NOT in the title — it goes into
+#     item specifics (Team, Show Title, Movie Title, Sport etc.). This
+#     frees 10-20 chars per title for better keywords without losing
+#     any findability (eBay indexes both sources).
+#
+# Title patterns use {name} for the signed personality and
+# {qualifier_suffix} for an optional tag-on phrase (rarely used now
+# that team/show moved to item specifics). Trailing "{qualifier_suffix}"
+# inserts nothing when qualifier is empty.
+#
+# Max safe name length per product is the remainder after subtracting
+# fixed boilerplate from eBay's 80-char cap. Budgets are commented
+# per-product; names longer than the budget raise a ListerError.
 #
 # `template_id` is null for plain photos (no Pillow compositing needed —
 # the scan IS the listing image). When set, the value must match a
@@ -20,47 +47,53 @@ products:
   # ── Plain photos ─────────────────────────────────────────────────────
   a4_photo:
     template_id: null
-    title_pattern: "{name} Signed A4 Photo Autograph{qualifier_suffix} Gift Display + COA"
+    title_pattern: "{name} Signed A4 Photo{qualifier_suffix} Autograph Memorabilia Gift +COA"
     default_price_gbp: 29.99
     size_clause: "an A4 (297mm x 210mm / 11.7in x 8.3in) Photograph Display."
+    # Boilerplate 54 chars → name budget 26
     # Evidence: Tim Allen Signed A4 Photo (item 267361288052)
 
   10x8_photo:
     template_id: null
-    title_pattern: "{name} Signed 10x8 Photo{qualifier_suffix} Autograph Signature + COA"
+    title_pattern: "{name} Signed 10x8 Photo{qualifier_suffix} Autograph Memorabilia Display +COA"
     default_price_gbp: 19.99
     size_clause: "a Signed 10x8 Inch (254mm x 203mm) Photograph."
+    # Boilerplate 62 chars → name budget 18
     # Evidence: Mel C / Alex Stepney Signed 10x8 Photo
 
   12x8_photo:
     template_id: null
-    title_pattern: "{name} Signed 12x8 Photo{qualifier_suffix} Autograph + COA"
+    title_pattern: "{name} Signed 12x8 Photo{qualifier_suffix} Autograph Memorabilia Display +COA"
     default_price_gbp: 19.99
     size_clause: "a Signed 12x8 Inch (30cm x 20cm) Photograph."
+    # Boilerplate 62 chars → name budget 18
     # Evidence: Mike Doyle Signed 12x8 Photo (item 257059745434)
 
   6x4_photo:
     template_id: null
-    title_pattern: "{name} Hand Signed 6x4 Photo{qualifier_suffix} Autograph Memorabilia + COA"
+    title_pattern: "{name} Hand Signed 6x4 Photo{qualifier_suffix} Autograph Memorabilia +COA"
     default_price_gbp: 17.99
     size_clause: "a Signed 6x4 Inch Photograph."
+    # Boilerplate 55 chars → name budget 25
     # Evidence: Dan Castellaneta Signed 6x4 Photo (item 257101644712)
 
   # ── Mount displays (Pillow-composited from template + picture + card) ─
   a4_mount:
     # A4-A Mount is the default variant; use a4-b-mount when available.
     template_id: a4-a-mount
-    title_pattern: "{name} Signed A4 Mount Display{qualifier_suffix} Autograph Signature + COA"
+    title_pattern: "{name} Signed A4 Photo Mount Display{qualifier_suffix} Autograph Memorabilia +COA"
     default_price_gbp: 39.99
     size_clause: "an A4 Mount Display. The overall size of the piece is A4 (297mm x 210mm / 11.7in x 8.3in)."
+    # Boilerplate 63 chars → name budget 17
     # Note: No active a4_mount listings found in first 2,000 — template
     # exists but the product may be new/aspirational. Verify pricing.
 
   10x8_mount:
     template_id: 10x8-mount-land   # default to landscape; override per listing
-    title_pattern: "{name} Signed 10x8 Mount Display{qualifier_suffix} Autograph Signature + COA"
+    title_pattern: "{name} Signed 10x8 Photo Mount Display{qualifier_suffix} Autograph Memorabilia +COA"
     default_price_gbp: 29.99
     size_clause: "a 10x8 Inch Mount Display. The overall size of the piece is approx 12x10 Inches."
+    # Boilerplate 65 chars → name budget 15
     # Note: No active 10x8_mount listings found. Pricing guessed
     # between 10x8_photo (£19.99) and 16x12_mount (£54.99).
 
@@ -68,31 +101,35 @@ products:
     # Six variants A-F; default to 16x12-a-mount. Override via
     # template_id override when listing from a specific variant.
     template_id: 16x12-a-mount
-    title_pattern: "{name} Hand Signed 16x12 Mount Display{qualifier_suffix} Autograph Signature w/COA"
+    title_pattern: "{name} Signed 16x12 Photo Mount Display{qualifier_suffix} Autograph Memorabilia +COA"
     default_price_gbp: 54.99
     size_clause: "a Genuine Hand Signed Large 16x12 Inch Photograph Display. The overall size of the piece is 16x12 Inches (40x30cm)."
+    # Boilerplate 66 chars → name budget 14
     # Evidence: Alan Hansen 16x12 Mount Display (item 267507152141)
 
   # ── Framed photo displays ────────────────────────────────────────────
   a4_frame:
     template_id: a4-a-frame
-    title_pattern: "{name} Hand Signed A4 Framed Photo Display{qualifier_suffix} Autograph"
+    title_pattern: "{name} Signed A4 Framed Photo Display{qualifier_suffix} Autograph Memorabilia +COA"
     default_price_gbp: 119.99
     size_clause: "an A4 (297mm x 210mm / 11.7in x 8.3in) Framed Photograph Display."
+    # Boilerplate 64 chars → name budget 16
     # Evidence: Debbie Harry A4 Framed Photo (item 257301958734)
 
   10x8_frame:
     template_id: 10x8-frame-land    # default landscape; override per listing
-    title_pattern: "{name} Hand Signed 10x8 Framed Photo Display{qualifier_suffix} Autograph"
+    title_pattern: "{name} Signed 10x8 Framed Photo Display{qualifier_suffix} Autograph Memorabilia +COA"
     default_price_gbp: 54.99
     size_clause: "a 10x8 Inch (254mm x 203mm) Framed Photograph Display."
+    # Boilerplate 66 chars → name budget 14
     # Evidence: Stuart Pearce 10x8 Framed Photo Display (item 257200816663)
 
   16x12_frame:
     template_id: 16x12-a-frame
-    title_pattern: "{name} Signed 16x12 Framed Photo Display{qualifier_suffix} Autograph"
+    title_pattern: "{name} Signed 16x12 Framed Photo Display{qualifier_suffix} Autograph Memorabilia +COA"
     default_price_gbp: 149.99
     size_clause: "a 16x12 Inch (40.6cm x 30.5cm / 406mm x 305mm) Framed Photograph Display."
+    # Boilerplate 67 chars → name budget 13
     # Evidence: Steve Bruce & Bryan Robson 16x12 Framed Photo (item 257301959210)
 
 # ── Orientation / variant resolution hints ─────────────────────────────

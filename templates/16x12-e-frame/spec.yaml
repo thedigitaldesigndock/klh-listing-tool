@@ -28,16 +28,17 @@ text:
 - id: name
   content: '{name}'
   bbox:
-  - 1906
+  - 1984
   - 2826
-  - 2879
+  - 2814
   - 2900
   font: Cambria
   size_range:
   - 60
-  - 96
+  - 133
   align: center
   anchor: middle
+  bold: true
 output:
   format: jpg
   quality: 92

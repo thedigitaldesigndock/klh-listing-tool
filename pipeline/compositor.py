@@ -55,6 +55,7 @@ class TextEntry:
     anchor: str
     size: Optional[int] = None
     size_range: Optional[tuple[int, int]] = None
+    bold: bool = False
 
 
 @dataclass
@@ -102,6 +103,7 @@ def load_spec(template_id: str, templates_dir: Path = TEMPLATES_DIR) -> Template
             anchor=entry.get("anchor", "middle"),
             size=entry.get("size"),
             size_range=tuple(entry["size_range"]) if entry.get("size_range") else None,
+            bold=bool(entry.get("bold", False)),
         ))
 
     out = raw.get("output") or {}
@@ -244,6 +246,7 @@ def composite(
             fill=(0, 0, 0),
             align=entry.align,
             anchor=entry.anchor,
+            bold=entry.bold,
         )
 
     if spec.output_max_dim:

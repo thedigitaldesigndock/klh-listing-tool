@@ -227,6 +227,56 @@ def cmd_unlist(args) -> int:
 
 
 # --------------------------------------------------------------------------- #
+# Out-of-stock control commands
+# --------------------------------------------------------------------------- #
+
+def cmd_preferences(args) -> int:
+    """`klh preferences out-of-stock-control --enable/--disable/--status`."""
+    if args.topic != "out-of-stock-control":
+        raise SystemExit(f"unknown preferences topic: {args.topic!r}")
+
+    if args.status or (not args.enable and not args.disable):
+        current = lister.get_out_of_stock_control()
+        print(f"OutOfStockControl: {'ENABLED' if current else 'disabled'}")
+        return 0
+
+    if args.enable and args.disable:
+        raise SystemExit("cannot pass both --enable and --disable")
+
+    enable = bool(args.enable)
+    verb = "enabling" if enable else "disabling"
+    print(f"[preferences] {verb} OutOfStockControl ...")
+    result = lister.set_out_of_stock_control(enable)
+    print(f"  ack      {result.get('ack')}")
+    print(f"  enabled  {result.get('enabled')}")
+    return 0
+
+
+def cmd_outofstock(args) -> int:
+    """`klh outofstock <item_id>` — set Quantity to 0 (listing stays active)."""
+    if not args.confirm:
+        print(f"[outofstock] DRY RUN — pass --confirm to zero out {args.item_id}")
+        return 0
+    print(f"[outofstock] setting Quantity=0 on {args.item_id} ...")
+    result = lister.set_item_quantity(args.item_id, 0)
+    print(f"  ack       {result.get('ack')}")
+    print(f"  quantity  {result.get('quantity')}")
+    return 0
+
+
+def cmd_restock(args) -> int:
+    """`klh restock <item_id> [--qty N]` — revive an out-of-stock listing."""
+    if not args.confirm:
+        print(f"[restock] DRY RUN — pass --confirm to set {args.item_id} to qty {args.qty}")
+        return 0
+    print(f"[restock] setting Quantity={args.qty} on {args.item_id} ...")
+    result = lister.set_item_quantity(args.item_id, int(args.qty))
+    print(f"  ack       {result.get('ack')}")
+    print(f"  quantity  {result.get('quantity')}")
+    return 0
+
+
+# --------------------------------------------------------------------------- #
 # Parser wiring (called from cli/klh.py)
 # --------------------------------------------------------------------------- #
 
@@ -303,3 +353,41 @@ def register(sub):
     p_unlist.add_argument("--confirm", action="store_true",
                           help="actually end the listing")
     p_unlist.set_defaults(func=lambda a: sys.exit(cmd_unlist(a)))
+
+    # ── OutOfStockControl preferences & stock toggles ──────────────────
+    p_prefs = sub.add_parser(
+        "preferences",
+        help="manage seller account preferences (OutOfStockControl, …)",
+    )
+    p_prefs.add_argument("topic",
+                         choices=["out-of-stock-control"],
+                         help="which preference to read/modify")
+    p_prefs.add_argument("--enable", action="store_true",
+                         help="turn the preference ON")
+    p_prefs.add_argument("--disable", action="store_true",
+                         help="turn the preference OFF")
+    p_prefs.add_argument("--status", action="store_true",
+                         help="just show current value (default if no flag)")
+    p_prefs.set_defaults(func=lambda a: sys.exit(cmd_preferences(a)))
+
+    p_oos = sub.add_parser(
+        "outofstock",
+        help="set Quantity=0 on a listing (stays ACTIVE but hidden; "
+             "requires OutOfStockControl enabled)",
+    )
+    p_oos.add_argument("item_id")
+    p_oos.add_argument("--confirm", action="store_true",
+                       help="actually zero the stock")
+    p_oos.set_defaults(func=lambda a: sys.exit(cmd_outofstock(a)))
+
+    p_restock = sub.add_parser(
+        "restock",
+        help="set Quantity>0 on an out-of-stock listing (revives it "
+             "in search results)",
+    )
+    p_restock.add_argument("item_id")
+    p_restock.add_argument("--qty", type=int, default=1,
+                           help="new quantity (default 1)")
+    p_restock.add_argument("--confirm", action="store_true",
+                           help="actually set the new quantity")
+    p_restock.set_defaults(func=lambda a: sys.exit(cmd_restock(a)))

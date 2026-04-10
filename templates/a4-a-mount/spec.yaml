@@ -22,30 +22,47 @@ slots:
     scale_mode: fit_cover
     background: null
 text:
+# Values below were reverse-engineered by measuring actual text extents
+# in Kim's goldens (see tests/test_compositor.py). Kim's text block is
+# centred on the container (y-center 2015) and her effective x-budget is
+# ~1200px (names rendered up to 1093px wide), not the narrow PSD name
+# layer bbox (which was only 699 wide).
 - id: signed_by
   content: Personally Signed By
+  # Centre y = 1946 — matches Kim's signed_by cap-top y=1926 once the
+  # "mm" anchor's font-metric offset is accounted for. Size 62 gives a
+  # 551px width which matches Kim's 551. Uses PIL's metric-based "mm"
+  # anchor so the descenders in "y"/"g" don't pull the cap top off
+  # position.
   bbox:
-  - 2010
-  - 1926
-  - 3416
-  - 1983
+  - 2441
+  - 1913
+  - 2991
+  - 1979
   font: Cambria
-  size: 57
+  size: 62
   align: center
   anchor: middle
 - id: name
   content: '{name}'
+  # x: 2115-3315 = 1200 wide, centred on 2715.
+  # Centre y = 2027 — shifted up 8px from earlier 2035 to match Kim's
+  # measured cap top (y=1926 in the goldens) after accounting for PIL's
+  # "mm" anchor font-metric offset.
+  # size_range max 133 lets font-fit pick one step below the previous
+  # 135 cap — Kim's goldens are very slightly smaller than size 135.
   bbox:
-  - 2010
-  - 1988
-  - 3416
-  - 2105
+  - 2115
+  - 1950
+  - 3315
+  - 2104
   font: Cambria
   size_range:
   - 60
-  - 152
+  - 133
   align: center
   anchor: middle
+  bold: true
 output:
   format: jpg
   quality: 92

@@ -11,6 +11,9 @@ Subcommands dispatched here:
     klh schedule     — (Phase 6) create a scheduled listing (--at ISO8601)
     klh list         — (Phase 6) create a live listing now (--confirm)
     klh unlist       — (Phase 6) end an active listing
+    klh preferences  — (Phase 6.5) read/set OutOfStockControl
+    klh outofstock   — (Phase 6.5) zero a listing's quantity (stays active)
+    klh restock      — (Phase 6.5) revive an out-of-stock listing
 """
 
 import argparse

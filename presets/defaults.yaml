@@ -58,11 +58,41 @@ return_policy:
 
 # Minimum Item Specifics applied to every listing. Per-product presets
 # can add more and individual listings can add/override (e.g. Player,
-# Team, Year Signed, Show Title).
+# Team, Show Title, Movie Title, Sport, League).
+#
+# Two blocks here:
+#
+#   1. Required eBay specifics. These are the category-mandated fields
+#      (Country of Origin, Signed, Original/Reproduction) that most of
+#      Kim's autograph sub-categories insist on. Missing one is an
+#      instant listing rejection.
+#
+#   2. Keyword-packed "Q&A-hack" specifics. These are CUSTOM names we
+#      invented — eBay allows arbitrary specific names alongside the
+#      required ones, and the values get indexed for keyword search
+#      just like title words. By packing synonym-dense answers into
+#      four custom specifics we cover the full "signed" vocabulary
+#      (Signature, Autograph, Autographed, Hand Signed, Genuine, In
+#      Person, Original, Authentic…) without eating title characters.
+#
+#      Bonus: these also act as a visible FAQ for buyers browsing the
+#      item page — "Certificate Included: Free Certificate of
+#      Authenticity COA Cert LOA Letter" answers the #1 question Kim
+#      gets asked before anyone has to message her.
+#
+#      Char limits enforced: name ≤ 40 chars, value ≤ 65 chars. Values
+#      below are all under the cap.
 item_specifics:
-  "Country of Origin": "United Kingdom"
-  "Signed": "Yes"
-  "Original/Reproduction": "Original"
+  # Required — do not remove
+  "Country of Origin":       "United Kingdom"
+  "Signed":                  "Yes"
+  "Original/Reproduction":   "Original"
+
+  # Keyword-packed custom specifics (FAQ-style, SEO payload)
+  "Authenticity Guarantee":  "100% Genuine Hand Signed Autograph Signature Original Authentic"
+  "Certificate Included":    "Free Certificate of Authenticity COA Cert LOA Letter"
+  "Autograph Type":          "Hand Signed In Person Original Autographed Not Copy Pre-Print"
+  "Perfect For":             "Gift Present Memorabilia Collectible Mounted Framed Display"
 
 # Description template (HTML). The body lives in description_template.html
 # and is loaded alongside this file. The only required placeholder is

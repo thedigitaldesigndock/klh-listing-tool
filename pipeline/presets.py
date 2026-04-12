@@ -1,35 +1,45 @@
 """
 Listing presets loader and renderer.
 
-Loads the three files that together define a listing's "shape":
+Loads the four files that together define a listing's "shape":
 
     presets/defaults.yaml            — marketplace, shipping, returns, item
                                        specifics applied to every listing
     presets/products.yaml            — per-product overrides: template_id,
                                        title pattern, default price, size
                                        clause, variants, category lookup
+    presets/knowledge.yaml           — per-category title rules, field1
+                                       labels, keyword packs, club short→
+                                       full aliases (fed to title rule +
+                                       item-specifics enrichment)
     presets/description_template.html — HTML body with {size_clause}
                                        placeholder (only placeholder we
                                        require)
 
 The pipeline uses this module at listing time to turn a product key + a
-few per-listing fields (name, qualifier, orientation, subject, price,
-item specifics) into a fully-rendered dict ready to hand to the Trading
-API lister (pipeline/lister.py, TBD Phase 6).
+parsed filename (name + field1 + category) into a fully-rendered dict
+ready to hand to the Trading API lister (pipeline/lister.py).
 
 Design notes
 ------------
 * Pure data: no network, no disk writes, no Pillow. Just YAML + string
-  formatting. Trivially unit-testable.
-* Defaults + products are loaded once into a frozen PresetsBundle. The
-  CLI / lister passes the bundle around rather than re-reading YAML on
-  every listing.
-* Rendering is additive: defaults dict → deep-merged with the product's
-  entry → deep-merged with any per-listing overrides. We keep the merge
-  shallow-per-key for mappings and list-replace for lists; that matches
-  how eBay Trading AddFixedPriceItem treats these fields in practice
-  (e.g. you replace the ShippingServiceOptions list wholesale rather
-  than merging individual entries).
+  formatting + a lookup against the offers table. Trivially unit-testable.
+* Defaults + products + knowledge are loaded once into a frozen
+  PresetsBundle. The CLI / lister passes the bundle around rather than
+  re-reading YAML on every listing.
+* Rendering is additive, four layers deep:
+    1. defaults.item_specifics                 (global floor)
+    2. knowledge-derived specifics             (per-category enrichment)
+    3. products.yaml `item_specifics` block    (per-product, optional)
+    4. caller-supplied `item_specifics` kwarg  (wins)
+  Then a free-form `overrides` deep-merge is the last stop. We keep the
+  merge shallow-per-key for mappings and list-replace for lists; that
+  matches how eBay Trading AddFixedPriceItem treats these fields in
+  practice (e.g. you replace the ShippingServiceOptions list wholesale
+  rather than merging individual entries).
+* Best Offer acceptance/decline thresholds are pulled from
+  pipeline/offers.py at build time and attached to the listing dict as
+  a `best_offer` block. The lister turns that into XML.
 """
 
 from __future__ import annotations
@@ -40,6 +50,9 @@ from pathlib import Path
 from typing import Any, Optional
 
 import yaml
+
+from pipeline import offers
+from pipeline.filename import ParsedFilename
 
 # Default location: <repo_root>/presets/
 PRESETS_DIR = Path(__file__).resolve().parent.parent / "presets"
@@ -75,6 +88,8 @@ class PresetsBundle:
     description_template: str
     variants: dict
     categories_by_subject: dict
+    knowledge: dict = field(default_factory=dict)
+    dashboard_order: list = field(default_factory=list)
     source_dir: Path = field(default=PRESETS_DIR)
 
     def product(self, key: str) -> ProductPreset:
@@ -85,6 +100,31 @@ class PresetsBundle:
                 f"Unknown product key {key!r}. "
                 f"Known: {sorted(self.products)}"
             ) from e
+
+    # ----- knowledge lookups --------------------------------------------- #
+
+    def category_rule(self, category: Optional[str]) -> dict:
+        """
+        Return the knowledge.yaml entry for a category, or an empty
+        dict if category is None / unknown. Fails open so a typo in
+        Nicky's filename doesn't break the lister — you just lose the
+        per-category title/specific enrichment for that one listing.
+        """
+        if not category:
+            return {}
+        cats = self.knowledge.get("categories") or {}
+        return cats.get(category) or {}
+
+    def expand_club(self, short_name: Optional[str]) -> Optional[str]:
+        """
+        Look up a short club/team name in knowledge.yaml `clubs:` and
+        return the expanded form, or None if there's no alias. A None
+        input returns None.
+        """
+        if not short_name:
+            return None
+        clubs = self.knowledge.get("clubs") or {}
+        return clubs.get(short_name)
 
 
 # --------------------------------------------------------------------------- #
@@ -101,13 +141,29 @@ def _read_yaml(path: Path) -> dict:
     return data
 
 
+def _read_yaml_optional(path: Path) -> dict:
+    """Same as _read_yaml but returns {} if the file is missing."""
+    if not path.exists():
+        return {}
+    with open(path) as f:
+        data = yaml.safe_load(f)
+    if data is None:
+        return {}
+    if not isinstance(data, dict):
+        raise PresetsError(f"Expected a mapping at the top level of {path}")
+    return data
+
+
 def load(presets_dir: Path = PRESETS_DIR) -> PresetsBundle:
-    """Load defaults.yaml, products.yaml and description_template.html."""
+    """Load defaults.yaml, products.yaml, knowledge.yaml and the
+    description template."""
     defaults_path  = presets_dir / "defaults.yaml"
     products_path  = presets_dir / "products.yaml"
+    knowledge_path = presets_dir / "knowledge.yaml"
 
     defaults = _read_yaml(defaults_path)
     products_raw = _read_yaml(products_path)
+    knowledge = _read_yaml_optional(knowledge_path)
 
     # description template filename is named inside defaults.yaml, but
     # we only hard-require `{size_clause}`. Fall back to the conventional
@@ -159,6 +215,8 @@ def load(presets_dir: Path = PRESETS_DIR) -> PresetsBundle:
         description_template=description_template,
         variants=products_raw.get("variants") or {},
         categories_by_subject=products_raw.get("categories_by_subject") or {},
+        knowledge=knowledge,
+        dashboard_order=products_raw.get("dashboard_order") or [],
         source_dir=presets_dir,
     )
 
@@ -167,40 +225,143 @@ def load(presets_dir: Path = PRESETS_DIR) -> PresetsBundle:
 # Rendering
 # --------------------------------------------------------------------------- #
 
+MAX_TITLE_LEN = 80  # eBay GB hard cap
+
+# Optional trailing tokens that get appended to a rendered title IF they
+# fit inside the 80-char budget. They are tried in order and each is
+# added greedily (appending one never prevents the next from also being
+# added). The goal is to fill dead space in short titles with extra
+# customer-facing keywords — "Memorabilia" is a genuine Cassini search
+# term, "COA" has no search value but is a reassuring eyeball marker
+# ("Certificate of Authenticity Included" is already in item specifics).
+#
+# Order matters: Memorabilia first (more search juice), then COA, so
+# the mid-budget case — space for only one — picks the better one.
+TITLE_FILLER_TOKENS: tuple[str, ...] = (" Memorabilia", " COA")
+
+
+def _compose_title(pattern: str, name: str, suffix: str) -> str:
+    """Plug name + team_suffix into a product title pattern. Accepts
+    both `{qualifier_suffix}` (legacy) and `{team_suffix}` (current)
+    so stale patterns still render."""
+    return pattern.format(
+        name=name.strip(),
+        team_suffix=suffix,
+        qualifier_suffix=suffix,
+    )
+
+
+def _build_team_suffix(
+    bundle: PresetsBundle,
+    field1: Optional[str],
+    category: Optional[str],
+) -> list[str]:
+    """
+    Return a list of candidate title suffixes, longest first. The
+    render_title loop tries each in order and picks the first that
+    fits inside the 80-char budget.
+
+    Candidate order (for field1="Leicester Tigers", category="Rugby"):
+        [" Leicester Tigers Rugby",   # full: field1 + category keyword
+         " Leicester Tigers",         # drop category
+         ""]                          # drop everything
+
+    For field1="Man Utd", category="Football" (in_title: False):
+        [" Man Utd", ""]
+
+    For field1=None:
+        [""]
+    """
+    candidates: list[str] = []
+
+    field1_clean = (field1 or "").strip()
+    rule = bundle.category_rule(category)
+    in_title = bool(rule.get("in_title"))
+
+    if field1_clean:
+        if in_title and category:
+            candidates.append(f" {field1_clean} {category.strip()}")
+        candidates.append(f" {field1_clean}")
+
+    # Always include empty string as the last-resort fallback.
+    candidates.append("")
+
+    # De-dupe while preserving order.
+    seen = set()
+    out: list[str] = []
+    for c in candidates:
+        if c not in seen:
+            out.append(c)
+            seen.add(c)
+    return out
+
+
 def render_title(
     bundle: PresetsBundle,
     product_key: str,
     name: str,
     qualifier: Optional[str] = None,
+    *,
+    field1: Optional[str] = None,
+    category: Optional[str] = None,
 ) -> str:
     """
     Apply the product's title pattern.
 
     title_pattern uses two placeholders:
-        {name}              — signer name (required)
-        {qualifier_suffix}  — " <qualifier>" or empty string
+        {name}         — signer name (required)
+        {team_suffix}  — " <field1>" (+ " <Category>" if in_title) or ""
+
+    Title is built in three candidate lengths and the LONGEST that fits
+    inside eBay's 80-char cap is picked. Order:
+        1. " <field1> <Category>"  (only if knowledge says in_title: true)
+        2. " <field1>"
+        3. ""                       (no team suffix at all)
 
     Example:
-        pattern: "{name} Signed A4 Photo{qualifier_suffix} Autograph + COA"
-        name="Tim Allen", qualifier=None
-            → "Tim Allen Signed A4 Photo Autograph + COA"
-        name="Mel C",      qualifier="Spice Girls"
-            → "Mel C Signed A4 Photo Spice Girls Autograph + COA"
+        pattern: "{name} Signed A4 Photo Mount Display{team_suffix} Autograph"
+        name="Ellis Genge", field1="Leicester Tigers", category="Rugby"
+            try 1: "Ellis Genge Signed A4 Photo Mount Display Leicester Tigers Rugby Autograph"
+                   → over 80, reject
+            try 2: "Ellis Genge Signed A4 Photo Mount Display Leicester Tigers Autograph"
+                   → fits, pick this.
 
-    eBay GB titles are capped at 80 chars — we raise if we blow past.
+    `qualifier` is a legacy alias: if passed and `field1` is None, it
+    fills field1. Kept so older callers (CLI flags, old dashboard code)
+    still work unchanged.
     """
     product = bundle.product(product_key)
-    qs = f" {qualifier.strip()}" if qualifier and qualifier.strip() else ""
-    title = product.title_pattern.format(
-        name=name.strip(),
-        qualifier_suffix=qs,
-    )
-    # eBay caps at 80. Warn loudly — the caller can truncate/rephrase.
-    if len(title) > 80:
+
+    # Legacy `qualifier` → field1 back-compat.
+    if field1 is None and qualifier is not None and qualifier.strip():
+        field1 = qualifier.strip()
+
+    candidates = _build_team_suffix(bundle, field1, category)
+
+    chosen: Optional[str] = None
+    for suffix in candidates:
+        attempt = _compose_title(product.title_pattern, name, suffix)
+        if len(attempt) <= MAX_TITLE_LEN:
+            chosen = attempt
+            break
+
+    if chosen is None:
+        # Even the empty-suffix form is too long — name is too long.
+        overflow = _compose_title(product.title_pattern, name, "")
         raise PresetsError(
-            f"Rendered title is {len(title)} chars (>80, eBay max):\n  {title}"
+            f"Rendered title is {len(overflow)} chars "
+            f"(>{MAX_TITLE_LEN}, eBay max):\n  {overflow}"
         )
-    return title
+
+    # Greedily pack trailing filler tokens into any leftover budget.
+    # "Memorabilia" has real search value, "COA" is just a reassuring
+    # eyeball marker — both get tried independently so a mid-sized
+    # title can fit one without needing room for the other.
+    for token in TITLE_FILLER_TOKENS:
+        if len(chosen) + len(token) <= MAX_TITLE_LEN:
+            chosen += token
+
+    return chosen
 
 
 def render_description(
@@ -287,6 +448,60 @@ def get_category_id(
 # Merge + full build
 # --------------------------------------------------------------------------- #
 
+def enrich_specifics_from_knowledge(
+    bundle: PresetsBundle,
+    field1: Optional[str],
+    category: Optional[str],
+) -> dict[str, str]:
+    """
+    Build the knowledge-derived item specifics for one listing.
+
+    Fields emitted (all optional — only present if data is available):
+
+      * <field1_label>           — e.g. "Club": "Man Utd"
+      * <field1_label> (Full)    — e.g. "Club (Full)": "Manchester United"
+      * Category Keywords        — Cassini SEO payload for that sport/
+                                    music/TV bucket
+      * Category                 — bare category word (e.g. "Rugby")
+
+    Keys are chosen so every name stays ≤40 and value ≤65 chars. We use
+    "(Full)" rather than "(Full Name)" because some labels like
+    "Weight Class" push the total over 40 with " (Full Name)".
+
+    Returns an empty dict for unknown categories, missing field1, or
+    an empty knowledge bundle — enrichment fails open.
+    """
+    out: dict[str, str] = {}
+    rule = bundle.category_rule(category)
+    if not rule:
+        return out
+
+    field1_clean = (field1 or "").strip() or None
+    label = (rule.get("field1_label") or "").strip() or None
+
+    if field1_clean and label:
+        # Main specific: the short form goes under the label.
+        short_value = field1_clean[:65]
+        out[label[:40]] = short_value
+
+        # If the club dictionary has an expansion and it differs, also
+        # emit the full form under a parallel "(Full)" label.
+        full = bundle.expand_club(field1_clean)
+        if full and full.strip() and full.strip() != field1_clean:
+            full_label = f"{label} (Full)"
+            if len(full_label) <= 40:
+                out[full_label] = full.strip()[:65]
+
+    kw = (rule.get("is_keywords") or "").strip()
+    if kw:
+        out["Category Keywords"] = kw[:65]
+
+    if category and category.strip():
+        out["Category"] = category.strip()[:65]
+
+    return out
+
+
 def _deep_merge(base: dict, override: dict) -> dict:
     """
     Return a new dict: `override` merged into `base`.
@@ -309,13 +524,47 @@ def _deep_merge(base: dict, override: dict) -> dict:
     return out
 
 
+def _resolve_best_offer(price_gbp: float) -> Optional[dict]:
+    """
+    Look up BestOffer thresholds for `price_gbp` in the offers table.
+
+    Returns a dict {list_price, min_offer, auto_accept} if BestOffer
+    applies, or None for:
+      * prices below £15.99 (no-BO band)
+      * non-`.99` list prices (lookup raises — we swallow it and
+        return None; the strict validation runs in offers.lookup
+        when it matters, and a build_listing sanity-check caller
+        can still invoke offers.lookup directly)
+
+    We deliberately fail-soft here so tests and dry-runs that pass
+    round numbers (£75.00) don't blow up. The ultimate "no dodgy
+    prices hit eBay" guard lives higher up: the dashboard only shows
+    suggested .99 chips, and Nicky can't submit a listing without a
+    real lookup succeeding at XML-build time.
+    """
+    try:
+        row = offers.lookup(float(price_gbp))
+    except offers.OfferLookupError:
+        return None
+    if row is None:
+        return None
+    return {
+        "list_price":  row.list_price,
+        "min_offer":   row.min_offer,
+        "auto_accept": row.auto_accept,
+    }
+
+
 def build_listing(
     bundle: PresetsBundle,
     *,
     product_key: str,
-    name: str,
+    name: Optional[str] = None,
     qualifier: Optional[str] = None,
-    subject: str = "default",
+    parsed: Optional[ParsedFilename] = None,
+    field1: Optional[str] = None,
+    category: Optional[str] = None,
+    subject: Optional[str] = None,
     orientation: Optional[str] = None,
     variant: Optional[str] = None,
     price_gbp: Optional[float] = None,
@@ -326,7 +575,18 @@ def build_listing(
     """
     Render a full listing dict for a single item.
 
-    Output shape (stable — this is what the Phase 6 lister will consume):
+    Inputs:
+      * `parsed` — a ParsedFilename (from pipeline.filename). If
+        provided, its `name`/`field1`/`category` fill the matching
+        kwargs (explicit kwargs still win).
+      * `name`, `field1`, `category` — raw values. `qualifier` is a
+        legacy alias for field1 and is honoured if field1 is None.
+      * `subject` — eBay category subject slug (football_retired,
+        music_pop, …). If None, auto-derived from knowledge.yaml's
+        `subject` field for the listing's `category`, falling back
+        to "default".
+
+    Output shape (stable — this is what pipeline.lister consumes):
 
         {
           "product_key": str,
@@ -336,11 +596,14 @@ def build_listing(
           "price_gbp": float,
           "sku": str | None,
           "category_id": int,
-          "marketplace": {...},        # from defaults
-          "listing": {...},            # from defaults
-          "shipping": {...},           # from defaults
-          "return_policy": {...},      # from defaults
-          "item_specifics": {...},     # defaults ∪ caller
+          "marketplace":     {...},    # from defaults
+          "listing":         {...},    # from defaults
+          "seller_profiles": {...},    # from defaults
+          "shipping":        {...},    # from defaults, documentation only
+          "return_policy":   {...},    # from defaults, documentation only
+          "item_specifics":  {...},    # layered: defaults ∪ knowledge
+                                       #          ∪ product ∪ caller
+          "best_offer":      {...}|None,  # from pipeline.offers lookup
         }
 
     `overrides` is deep-merged into the resulting dict last, so callers
@@ -349,7 +612,33 @@ def build_listing(
     """
     product = bundle.product(product_key)
 
-    title = render_title(bundle, product_key, name, qualifier)
+    # ---- Resolve the "what are we listing" inputs ----------------------
+    if parsed is not None:
+        if name is None:
+            name = parsed.name
+        if field1 is None:
+            field1 = parsed.field1
+        if category is None:
+            category = parsed.category
+    if field1 is None and qualifier is not None and qualifier.strip():
+        field1 = qualifier.strip()
+    if not name:
+        raise PresetsError("build_listing: `name` is required")
+
+    # Subject defaults: prefer explicit, then knowledge.yaml's
+    # per-category subject slug, then the hard-coded "default".
+    if subject is None:
+        rule = bundle.category_rule(category)
+        subject = rule.get("subject") or "default"
+
+    # ---- Render the human-visible bits ---------------------------------
+    title = render_title(
+        bundle,
+        product_key,
+        name,
+        field1=field1,
+        category=category,
+    )
     description_html = render_description(bundle, product_key)
     template_id = pick_template_id(
         bundle,
@@ -359,13 +648,31 @@ def build_listing(
     )
     category_id = get_category_id(bundle, subject)
 
-    # Start with the defaults, then layer caller-specific stuff on top.
+    effective_price = float(
+        price_gbp if price_gbp is not None else product.default_price_gbp
+    )
+
+    # ---- Build the layered item-specifics block -----------------------
+    specifics: dict[str, str] = copy.deepcopy(
+        bundle.defaults.get("item_specifics", {})
+    )
+    # Layer 2: knowledge-derived (per-category enrichment)
+    specifics.update(enrich_specifics_from_knowledge(bundle, field1, category))
+    # Layer 3: per-product (optional — only a few products will need this)
+    product_specifics = product.raw.get("item_specifics") or {}
+    if isinstance(product_specifics, dict):
+        specifics.update({str(k): str(v) for k, v in product_specifics.items()})
+    # Layer 4: caller-supplied (wins)
+    if item_specifics:
+        specifics.update({str(k): str(v) for k, v in item_specifics.items()})
+
+    # ---- Assemble the listing dict -------------------------------------
     listing: dict = {
         "product_key": product_key,
         "template_id": template_id,
         "title": title,
         "description_html": description_html,
-        "price_gbp": float(price_gbp if price_gbp is not None else product.default_price_gbp),
+        "price_gbp": effective_price,
         "sku": sku,
         "category_id": category_id,
         "marketplace":      copy.deepcopy(bundle.defaults.get("marketplace", {})),
@@ -375,12 +682,9 @@ def build_listing(
         # uses seller_profiles when the account is on Business Policies.
         "shipping":         copy.deepcopy(bundle.defaults.get("shipping", {})),
         "return_policy":    copy.deepcopy(bundle.defaults.get("return_policy", {})),
-        "item_specifics":   copy.deepcopy(bundle.defaults.get("item_specifics", {})),
+        "item_specifics":   specifics,
+        "best_offer":       _resolve_best_offer(effective_price),
     }
-
-    # Merge in caller-supplied item specifics (e.g. Player, Team, Year Signed).
-    if item_specifics:
-        listing["item_specifics"].update(item_specifics)
 
     # Last stop: apply free-form overrides.
     if overrides:
@@ -402,8 +706,14 @@ def main():
     )
     parser.add_argument("product_key")
     parser.add_argument("name")
-    parser.add_argument("--qualifier", default=None)
-    parser.add_argument("--subject", default="default")
+    parser.add_argument("--field1", default=None,
+                        help="club / band / show / nickname (field 1)")
+    parser.add_argument("--category", default=None,
+                        help="Football / Rugby / Music / ... (field 2)")
+    parser.add_argument("--qualifier", default=None,
+                        help="legacy alias for --field1")
+    parser.add_argument("--subject", default=None,
+                        help="override eBay category subject slug")
     parser.add_argument("--orientation", default=None,
                         choices=[None, "landscape", "portrait"])
     parser.add_argument("--variant", default=None)
@@ -417,6 +727,8 @@ def main():
         bundle,
         product_key=args.product_key,
         name=args.name,
+        field1=args.field1,
+        category=args.category,
         qualifier=args.qualifier,
         subject=args.subject,
         orientation=args.orientation,

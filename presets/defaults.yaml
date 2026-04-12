@@ -56,43 +56,54 @@ return_policy:
   refund_option: MoneyBack
   description: null
 
-# Minimum Item Specifics applied to every listing. Per-product presets
-# can add more and individual listings can add/override (e.g. Player,
-# Team, Show Title, Movie Title, Sport, League).
+# Item Specifics applied to every listing.
 #
-# Two blocks here:
+# This block holds ONLY specifics that are truly generic — they apply
+# to every single thing Kim sells, regardless of size, format, mount vs
+# frame vs bare photo, sport vs music vs TV. Anything product-specific
+# (Size, Format, Frame Style, Sport, Team, Show, Year Signed, Player)
+# belongs in products.yaml per-product or on the per-listing call.
 #
-#   1. Required eBay specifics. These are the category-mandated fields
-#      (Country of Origin, Signed, Original/Reproduction) that most of
-#      Kim's autograph sub-categories insist on. Missing one is an
+# Why the strict separation? "Product leak". If we put something like
+# "Mounted Framed Display" in a shared default, a bare 10x8 photo
+# listing inherits those words and becomes a small lie. Cassini indexes
+# every item specific value for keyword search, so a product leak
+# doesn't just confuse buyers — it actively drags the wrong listings
+# into the wrong search results.
+#
+# Two groups below:
+#
+#   1. Required eBay specifics (Country of Origin, Signed,
+#      Original/Reproduction). Category-mandated. Missing one is an
 #      instant listing rejection.
 #
-#   2. Keyword-packed "Q&A-hack" specifics. These are CUSTOM names we
-#      invented — eBay allows arbitrary specific names alongside the
-#      required ones, and the values get indexed for keyword search
-#      just like title words. By packing synonym-dense answers into
-#      four custom specifics we cover the full "signed" vocabulary
-#      (Signature, Autograph, Autographed, Hand Signed, Genuine, In
-#      Person, Original, Authentic…) without eating title characters.
+#   2. Custom "Q&A" specifics. eBay allows arbitrary names alongside the
+#      required ones and the values get indexed for keyword search just
+#      like title words. By packing synonym-dense answers into five
+#      custom specifics we cover the full "signed" vocabulary
+#      (Signature, Autograph, Hand Signed, Genuine, In Person, …)
+#      without eating title characters, AND we act as a visible FAQ
+#      for buyers browsing the item page.
 #
-#      Bonus: these also act as a visible FAQ for buyers browsing the
-#      item page — "Certificate Included: Free Certificate of
-#      Authenticity COA Cert LOA Letter" answers the #1 question Kim
-#      gets asked before anyone has to message her.
+#      "COA Included" answers the #1 question Kim gets asked.
+#      "Other Styles" answers #2: "do you do it framed / in 16x12?"
+#      — a cross-sell to Kim's full format range without claiming the
+#      current item IS any one of those.
 #
-#      Char limits enforced: name ≤ 40 chars, value ≤ 65 chars. Values
-#      below are all under the cap.
+# Char limits enforced by eBay: name ≤ 40 chars, value ≤ 65 chars.
+# A test (test_defaults_specifics_within_ebay_char_limits) locks this in.
 item_specifics:
   # Required — do not remove
-  "Country of Origin":       "United Kingdom"
-  "Signed":                  "Yes"
-  "Original/Reproduction":   "Original"
+  "Country of Origin":     "United Kingdom"
+  "Signed":                "Yes"
+  "Original/Reproduction": "Original"
 
-  # Keyword-packed custom specifics (FAQ-style, SEO payload)
-  "Authenticity Guarantee":  "100% Genuine Hand Signed Autograph Signature Original Authentic"
-  "Certificate Included":    "Free Certificate of Authenticity COA Cert LOA Letter"
-  "Autograph Type":          "Hand Signed In Person Original Autographed Not Copy Pre-Print"
-  "Perfect For":             "Gift Present Memorabilia Collectible Mounted Framed Display"
+  # Custom Q&A specifics — generic only, NO product leak
+  "Authenticity":          "100% Genuine Hand Signed Autograph Signature Original Authentic"
+  "COA Included":          "Free Certificate of Authenticity COA Cert LOA Letter"
+  "Autograph Type":        "Hand Signed In Person Original Autographed Not Copy Pre-Print"
+  "Perfect For":           "Gift Present Birthday Christmas Memorabilia Collectible Display"
+  "Other Styles":          "Also Available A4 10x8 12x8 16x12 Mount Frame Photo Card"
 
 # Description template (HTML). The body lives in description_template.html
 # and is loaded alongside this file. The only required placeholder is

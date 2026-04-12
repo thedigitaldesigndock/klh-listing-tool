@@ -1,0 +1,872 @@
+/* KLH Dashboard — minimal stylesheet
+ *
+ * Design notes:
+ * - Cambria body font (installed on both Mac via Office + native PC).
+ * - Tile grid is CSS Grid with auto-fit so it reflows to Nicky's
+ *   monitor width.
+ * - Mount/Frame toggle is a native checkbox styled as an iOS-ish switch.
+ * - No frameworks, no build step — everything ships as plain files
+ *   under dashboard/static/.
+ */
+
+:root {
+  --bg:            #fafafa;
+  --bg-card:       #ffffff;
+  --border:        #e4e4e7;
+  --border-strong: #c7c7cc;
+  --text:          #1c1c1e;
+  --text-muted:    #6b6b70;
+  --accent:        #0a84ff;
+  --accent-soft:   #e5f0ff;
+  --warn-bg:       #fff4e5;
+  --warn-border:   #f0b84a;
+  --warn-text:     #7a4a00;
+  --radius:        10px;
+  --shadow-sm:     0 1px 2px rgba(0,0,0,0.06);
+  --shadow-md:     0 4px 12px rgba(0,0,0,0.08);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: Cambria, "Times New Roman", Georgia, serif;
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+/* --- Header -------------------------------------------------------- */
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 28px;
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.brand h1 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.2px;
+}
+
+.brand .subtitle {
+  font-size: 12px;
+  color: var(--text-muted);
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+
+.header-controls {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+/* --- Mount/Frame toggle ------------------------------------------- */
+
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.toggle input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.toggle-track {
+  position: relative;
+  width: 48px;
+  height: 26px;
+  background: var(--border-strong);
+  border-radius: 13px;
+  transition: background 0.15s ease;
+}
+
+.toggle-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 22px;
+  height: 22px;
+  background: #fff;
+  border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  transition: transform 0.15s ease;
+}
+
+.toggle input:checked ~ .toggle-track {
+  background: var(--accent);
+}
+
+.toggle input:checked ~ .toggle-track .toggle-thumb {
+  transform: translateX(22px);
+}
+
+.toggle-label {
+  font-size: 14px;
+  font-weight: 500;
+  display: inline-flex;
+  gap: 6px;
+  min-width: 110px;
+}
+
+.toggle-label [data-off] { color: var(--text); }
+.toggle-label [data-on]  { color: var(--text-muted); }
+.toggle input:checked ~ .toggle-label [data-off] { color: var(--text-muted); }
+.toggle input:checked ~ .toggle-label [data-on]  { color: var(--accent); }
+
+/* Segmented control: Mount | Frame */
+.segment-control {
+  display: inline-flex;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.segment {
+  padding: 5px 16px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+  line-height: 1.3;
+}
+
+.segment:not(:last-child) {
+  border-right: 1px solid var(--border-strong);
+}
+
+.segment:hover:not(.active) {
+  background: #f0f0f3;
+}
+
+.segment.active {
+  background: #34c759;
+  color: #fff;
+}
+
+/* --- Config banner ------------------------------------------------ */
+
+.config-banner {
+  padding: 8px 14px;
+  background: var(--warn-bg);
+  border: 1px solid var(--warn-border);
+  color: var(--warn-text);
+  border-radius: var(--radius);
+  font-size: 13px;
+  max-width: 520px;
+}
+
+.config-banner.hidden { display: none; }
+
+/* --- Main / grid -------------------------------------------------- */
+
+.app-main {
+  padding: 24px 32px;
+  max-width: 2100px;
+  margin: 0 auto;
+}
+
+#catalog.hidden { display: none; }
+
+.app-main h2 {
+  margin: 0 0 16px;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+}
+
+.catalog-heading {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  margin-bottom: 0;
+}
+.catalog-heading h2 {
+  margin-bottom: 0;
+}
+
+.product-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.grid-group-label {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+}
+
+.grid-group {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 240px));
+  gap: 14px;
+}
+
+.loading {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 40px;
+  color: var(--text-muted);
+}
+
+/* --- Tile --------------------------------------------------------- */
+
+.tile {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 10px;
+  cursor: pointer;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease,
+              transform 0.06s ease;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tile:hover {
+  border-color: var(--accent);
+  box-shadow: var(--shadow-md);
+}
+
+.tile:active {
+  transform: translateY(1px);
+}
+
+.tile.selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: var(--shadow-md);
+}
+
+.tile-thumb {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  margin: -4px 0 4px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #f4f4f6;
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tile-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.tile-thumb.placeholder {
+  color: var(--text-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  background:
+    repeating-linear-gradient(
+      45deg,
+      #f4f4f6 0,
+      #f4f4f6 10px,
+      #eeeef1 10px,
+      #eeeef1 20px
+    );
+}
+
+.tile-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.tile-meta {
+  font-size: 12px;
+  color: var(--text-muted);
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.tile-meta .chip {
+  display: inline-block;
+  padding: 2px 8px;
+  background: #f0f0f3;
+  border-radius: 10px;
+  font-size: 11px;
+  letter-spacing: 0.3px;
+}
+
+.tile-price {
+  margin-top: auto;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.tile-price .muted {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.tile.no-toggle {
+  background: #fcfcfd;
+}
+
+/* --- Workflow panel ----------------------------------------------- */
+
+.workflow {
+  margin-top: 36px;
+  padding-top: 24px;
+  border-top: 1px solid var(--border);
+}
+
+.workflow.hidden { display: none; }
+
+.workflow-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.workflow-title-row h2 {
+  margin: 0;
+}
+
+.workflow-title-controls {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+/* Mockup-only mode: hide listing-related elements, show mockup-only elements */
+body.mockup-mode .listing-only   { display: none !important; }
+body.mockup-mode .col-price      { display: none !important; }
+body.mockup-mode .col-status     { display: none !important; }
+body:not(.mockup-mode) .mockup-only-el { display: none !important; }
+
+.btn-ghost {
+  background: transparent;
+  border-color: var(--border);
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.btn-ghost:hover:not([disabled]) {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--bg-card);
+}
+
+.btn-ghost.hidden { display: none; }
+
+.workflow-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.workflow-summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 14px;
+}
+
+.workflow-summary .muted {
+  color: var(--text-muted);
+}
+
+.workflow-summary strong {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.workflow-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.scan-status {
+  padding: 9px 14px;
+  margin-bottom: 14px;
+  font-size: 13px;
+  background: var(--bg-card);
+  border-radius: var(--radius);
+  border-left: 4px solid var(--border);
+}
+
+.scan-status.muted {
+  color: var(--text-muted);
+}
+
+.scan-status.info {
+  color: var(--accent);
+  border-left-color: var(--accent);
+}
+
+.scan-status.ok {
+  border-left-color: #2ea148;
+  color: #18642b;
+}
+
+.scan-status.warn {
+  border-left-color: var(--warn-border);
+  color: var(--warn-text);
+}
+
+.scan-status.error {
+  border-left-color: #d14343;
+  color: #8a1a1a;
+}
+
+/* --- Buttons ------------------------------------------------------ */
+
+.btn {
+  font-family: inherit;
+  font-size: 13px;
+  padding: 7px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-card);
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease, transform 0.06s ease;
+}
+
+.btn:hover:not([disabled]) {
+  border-color: var(--accent);
+}
+
+.btn:active:not([disabled]) {
+  transform: translateY(1px);
+}
+
+.btn[disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
+.btn-primary:hover:not([disabled]) {
+  background: #0066d6;
+}
+
+.btn-danger {
+  color: #8a1a1a;
+  border-color: #d14343;
+}
+
+.btn-danger:hover:not([disabled]) {
+  background: #fdecec;
+  border-color: #a02a2a;
+}
+
+.btn-small {
+  padding: 5px 10px;
+  font-size: 12px;
+}
+
+/* --- Rows table --------------------------------------------------- */
+
+.rows-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  font-size: 14px;
+}
+
+.rows-table.hidden { display: none; }
+
+.rows-table th,
+.rows-table td {
+  padding: 10px 12px;
+  text-align: left;
+  vertical-align: middle;
+  border-bottom: 1px solid var(--border);
+}
+
+.rows-table thead th {
+  background: #f8f8fa;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.rows-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.col-thumb   { width: 100px; }
+.col-pair    { min-width: 380px; }
+.col-price   { min-width: 480px; }
+.col-status  { width: 180px; font-size: 12px; }
+.col-actions { width: 240px; }
+
+/* Price column: input on the left, chips flowing to the right. */
+.price-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.row-thumb {
+  width: 84px;
+  height: 64px;
+  object-fit: cover;
+  border-radius: 6px;
+  background: #f4f4f6;
+  border: 1px solid var(--border);
+  display: block;
+  cursor: zoom-in;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.row-thumb:not(.placeholder):hover {
+  transform: scale(1.04);
+  box-shadow: var(--shadow-md);
+}
+
+.row-thumb.placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: 10px;
+  cursor: default;
+}
+
+/* --- Lightbox / full-size mockup preview ------------------------- */
+
+.lightbox {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 20, 24, 0.82);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  z-index: 1000;
+  cursor: zoom-out;
+}
+
+.lightbox.hidden { display: none; }
+
+.lightbox img {
+  max-width: 95vw;
+  max-height: 92vh;
+  object-fit: contain;
+  border-radius: 6px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+  background: #fff;
+}
+
+.lightbox-close {
+  position: absolute;
+  top: 18px;
+  right: 22px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid var(--border-strong);
+  color: var(--text);
+  border-radius: 20px;
+  font-size: 20px;
+  width: 40px;
+  height: 40px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.lightbox-close:hover { background: #fff; }
+
+.pair-name {
+  font-weight: 600;
+  color: var(--text);
+  font-size: 15px;
+}
+
+.pair-meta {
+  margin-top: 4px;
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* --- Title editor (inside the pair cell) ------------------------ */
+
+.title-edit {
+  margin-top: 8px;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.title-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.title-input {
+  font-family: inherit;
+  font-size: 13px;
+  padding: 6px 9px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  width: 100%;
+  background: #fdfdff;
+  color: var(--text);
+}
+
+.title-input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-color: var(--accent);
+  background: #fff;
+}
+
+.title-count {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.title-count.over {
+  color: #8a1a1a;
+  font-weight: 600;
+}
+
+.col-price input[type="number"] {
+  width: 100px;
+  font-family: inherit;
+  font-size: 14px;
+  padding: 6px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+}
+
+.col-price input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-color: var(--accent);
+}
+
+.price-suggestions {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 6px;
+  align-items: center;
+  flex: 1 1 auto;
+}
+
+/* Bulk reprice control — lives inside the Price <th>. */
+.price-header {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+  text-transform: none;
+  font-weight: 600;
+}
+
+.price-header-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+}
+
+.bulk-reprice {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+}
+
+.bulk-reprice input[type="number"] {
+  width: 80px;
+  font-family: inherit;
+  font-size: 13px;
+  padding: 4px 7px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+}
+
+.bulk-reprice input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-color: var(--accent);
+}
+
+.bulk-reprice button {
+  font-family: inherit;
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-card);
+  color: var(--text);
+  cursor: pointer;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.bulk-reprice button:hover:not([disabled]) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Shared .price-suggestions rules apply, but the bulk variant sits
+   inline next to the "Apply to all" button rather than below a row
+   input, so give it a bit of left padding / visual separation. */
+.bulk-price-chips {
+  margin-left: 2px;
+}
+
+.price-chip {
+  font-family: inherit;
+  font-size: 12px;
+  padding: 4px 9px;
+  border-radius: 12px;
+  background: #f0f0f3;
+  border: 1px solid transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+
+.price-chip:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.price-chip.active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+  font-weight: 600;
+}
+
+/* Keep display: flex on an INNER wrapper, not on the td itself — a
+   flex <td> drops out of table layout and makes every row grow to the
+   height of the tallest sibling cell. */
+.actions-wrap {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.col-status.status-idle      { color: var(--text-muted); }
+.col-status.status-rendering,
+.col-status.status-verifying,
+.col-status.status-listing   { color: var(--accent); }
+.col-status.status-rendered,
+.col-status.status-verified  { color: #18642b; }
+.col-status.status-listed    { color: #18642b; font-weight: 600; }
+.col-status.status-error     { color: #8a1a1a; }
+
+.rows-table tr.row-error   { background: #fdf6f6; }
+.rows-table tr.row-listed  { background: #f3fbf5; }
+
+/* --- Unmatched details ------------------------------------------- */
+
+.unmatched {
+  margin-top: 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 14px;
+}
+
+.unmatched.hidden { display: none; }
+
+.unmatched summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-muted);
+  font-weight: 600;
+  padding: 4px 0;
+}
+
+.unmatched .bucket {
+  margin: 10px 0;
+}
+
+.unmatched .bucket h4 {
+  margin: 0 0 4px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+}
+
+.unmatched .bucket ul {
+  margin: 0;
+  padding-left: 20px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+/* --- Footer ------------------------------------------------------- */
+
+.app-footer {
+  padding: 16px 28px;
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: center;
+}

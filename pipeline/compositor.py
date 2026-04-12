@@ -209,6 +209,7 @@ def composite(
     picture_path: Optional[Path],
     card_path: Optional[Path],
     name: str,
+    secondary_path: Optional[Path] = None,
 ) -> Image.Image:
     """Run the full composite and return a PIL Image."""
     if spec.base_png is None:
@@ -225,6 +226,8 @@ def composite(
         _paste_slot(canvas, spec.slots["picture"], picture_path)
     if "card" in spec.slots and card_path:
         _paste_slot(canvas, spec.slots["card"], card_path)
+    if "secondary" in spec.slots and secondary_path:
+        _paste_slot(canvas, spec.slots["secondary"], secondary_path)
 
     # Optional overlay (mount border etc. that sits above picture/card)
     if spec.overlay_png is not None:
@@ -273,6 +276,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--template", required=True, help="template id (slug)")
     parser.add_argument("--picture", type=Path, help="picture source path")
     parser.add_argument("--card", type=Path, help="card source path")
+    parser.add_argument("--secondary", type=Path, help="secondary picture path (A4-B etc.)")
     parser.add_argument("--name", help="display name (defaults to picture stem)")
     parser.add_argument("--out", type=Path, required=True, help="output file path")
     args = parser.parse_args(argv)
@@ -285,7 +289,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     if not name:
         name = ""
 
-    img = composite(spec, args.picture, args.card, name)
+    img = composite(spec, args.picture, args.card, name, secondary_path=args.secondary)
     save_mockup(img, args.out, spec)
     print(f"✓ wrote {args.out}  ({img.size[0]}x{img.size[1]})")
     return 0

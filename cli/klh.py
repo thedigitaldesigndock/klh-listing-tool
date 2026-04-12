@@ -14,6 +14,8 @@ Subcommands dispatched here:
     klh preferences  — (Phase 6.5) read/set OutOfStockControl
     klh outofstock   — (Phase 6.5) zero a listing's quantity (stays active)
     klh restock      — (Phase 6.5) revive an out-of-stock listing
+    klh dashboard    — (Phase 6.6) run the local FastAPI dashboard UI
+    klh twofifteen   — (Phase 10) Two Fifteen POD integration (alias: 215)
 """
 
 import argparse
@@ -80,6 +82,16 @@ def _cmd_mockup(args):
     sys.exit(compositor.main(argv))
 
 
+def _cmd_dashboard(args):
+    from dashboard import server
+    server.run(
+        host=args.host,
+        port=args.port,
+        reload=args.reload,
+        open_browser=not args.no_browser,
+    )
+
+
 def _cmd_stub(args):
     print(f"{args.which}: not yet implemented")
     sys.exit(2)
@@ -128,6 +140,28 @@ def main():
     # Phase 6: verify / schedule / list / unlist — wired from cli.list_cmd
     from cli import list_cmd
     list_cmd.register(sub)
+
+    # Phase 9 (audit): fetch / report / signer / peek — wired from cli.audit_cmd
+    from cli import audit_cmd
+    audit_cmd.register(sub)
+
+    # Phase 10 (POD): Two Fifteen integration — wired from cli.twofifteen_cmd
+    from cli import twofifteen_cmd
+    twofifteen_cmd.register(sub)
+
+    # Phase 6.6: local FastAPI dashboard (`klh dashboard`)
+    from dashboard import server as dash_server
+    p_dash = sub.add_parser("dashboard",
+                            help="run the KLH listing dashboard (local web UI)")
+    p_dash.add_argument("--host", default="127.0.0.1",
+                        help="bind address (default: 127.0.0.1)")
+    p_dash.add_argument("--port", type=int, default=dash_server._default_port(),
+                        help="bind port (default: 8765 or $PORT)")
+    p_dash.add_argument("--reload", action="store_true",
+                        help="auto-reload on code changes (dev)")
+    p_dash.add_argument("--no-browser", action="store_true",
+                        help="don't auto-open the browser")
+    p_dash.set_defaults(func=_cmd_dashboard)
 
     args = parser.parse_args()
     args.func(args)

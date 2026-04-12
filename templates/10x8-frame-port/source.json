@@ -1,5 +1,5 @@
 {
-  "source_psd": "/Volumes/Samsung_990_4TB/KLH/Products/10x8 Frame Port.psdt",
+  "source_psd": "/Volumes/Samsung_990_4TB/KLH/Products/10x8 Frame Port.psd",
   "canvas": [
     1087,
     1307
@@ -11,6 +11,7 @@
     968
   ],
   "card_bbox": null,
+  "secondary_bbox": null,
   "text_container": null,
   "signed_by": null,
   "name_layer": null

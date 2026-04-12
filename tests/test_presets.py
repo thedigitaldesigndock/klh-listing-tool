@@ -14,6 +14,7 @@ from pathlib import Path
 import pytest
 
 from pipeline import presets
+from pipeline.filename import ParsedFilename
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PRESETS_DIR = REPO_ROOT / "presets"
@@ -24,14 +25,30 @@ PRESETS_DIR = REPO_ROOT / "presets"
 # --------------------------------------------------------------------------- #
 
 def test_load_bundle_has_expected_products():
+    """All 22 products from the new catalog should be present."""
     bundle = presets.load(PRESETS_DIR)
-    # Every product type we care about should be present.
-    expected = {
-        "a4_photo", "10x8_photo", "12x8_photo", "6x4_photo",
-        "a4_mount", "10x8_mount", "16x12_mount",
-        "a4_frame", "10x8_frame", "16x12_frame",
+    expected_mount_layouts = {
+        "a4_mount_a", "a4_mount_b",
+        "10x8_mount",
+        "16x12_mount_a", "16x12_mount_b",
+        "16x12_mount_c", "16x12_mount_d",
+        "16x12_mount_e", "16x12_mount_f",
     }
+    expected_frame_layouts = {
+        "a4_frame_a", "a4_frame_b",
+        "10x8_frame",
+        "16x12_frame_a", "16x12_frame_b",
+        "16x12_frame_c", "16x12_frame_d",
+        "16x12_frame_e", "16x12_frame_f",
+    }
+    expected_photo_only = {
+        "photo_6x4", "photo_10x8", "photo_12x8", "card_only",
+    }
+    expected = expected_mount_layouts | expected_frame_layouts | expected_photo_only
     assert expected <= set(bundle.products)
+    # And there should be exactly 22 products — no accidental extras.
+    assert len(bundle.products) == 22, \
+        f"expected 22 products, got {len(bundle.products)}: {sorted(bundle.products)}"
 
 
 def test_load_defaults_contain_core_sections():
@@ -41,6 +58,85 @@ def test_load_defaults_contain_core_sections():
         assert section in bundle.defaults, f"missing defaults section: {section}"
 
 
+# --------------------------------------------------------------------------- #
+# defaults.yaml item_specifics — the "no product leak" contract
+# --------------------------------------------------------------------------- #
+
+# These are the forbidden substrings: words that name a specific product
+# type and would leak into listings where that type doesn't apply. Casing
+# is intentional — we compare case-insensitively below.
+_LEAK_WORDS = (
+    "a4", "10x8", "12x8", "16x12", "6x4",
+    "mount", "mounted", "frame", "framed", "photo",
+)
+
+
+def test_defaults_specifics_have_required_ebay_fields():
+    """Category-mandated fields must survive any rewrite."""
+    bundle = presets.load(PRESETS_DIR)
+    specifics = bundle.defaults["item_specifics"]
+    assert specifics["Country of Origin"] == "United Kingdom"
+    assert specifics["Signed"] == "Yes"
+    assert specifics["Original/Reproduction"] == "Original"
+
+
+def test_defaults_specifics_renamed_to_coa_included():
+    """The old 'Certificate Included' field is gone, replaced by 'COA Included'."""
+    bundle = presets.load(PRESETS_DIR)
+    specifics = bundle.defaults["item_specifics"]
+    assert "COA Included" in specifics
+    assert "Certificate Included" not in specifics
+    # Value keeps the COA / LOA / Cert keyword payload for Cassini.
+    assert "COA" in specifics["COA Included"]
+    assert "LOA" in specifics["COA Included"]
+
+
+def test_defaults_specifics_have_other_styles_cross_sell():
+    """Kim's #2 FAQ question gets its own specific."""
+    bundle = presets.load(PRESETS_DIR)
+    specifics = bundle.defaults["item_specifics"]
+    assert "Other Styles" in specifics
+    # "Other Styles" is a cross-sell advertising format availability; it's
+    # the ONE intentional exception to the no-leak rule, so we exempt it
+    # from the leak check below. Its job is to name every format Kim does.
+
+
+def test_defaults_specifics_have_no_product_leak():
+    """
+    Every NON-exempted default value must be free of product-type words
+    so none of them falsely imply the current listing is any particular
+    format. 'Other Styles' is exempt — its whole purpose is to list
+    formats.
+    """
+    bundle = presets.load(PRESETS_DIR)
+    specifics = bundle.defaults["item_specifics"]
+    exempt = {"Other Styles"}
+    for name, value in specifics.items():
+        if name in exempt:
+            continue
+        lowered = str(value).lower()
+        for word in _LEAK_WORDS:
+            assert word not in lowered, (
+                f"item_specifics[{name!r}] leaks product word "
+                f"{word!r}: {value!r}"
+            )
+
+
+def test_defaults_specifics_within_ebay_char_limits():
+    """
+    eBay caps item-specific names at 40 chars and values at 65.
+    Blowing past either is an instant listing rejection, and because
+    these are shared defaults a single over-length value would tank
+    EVERY listing. Lock it in with a test.
+    """
+    bundle = presets.load(PRESETS_DIR)
+    for name, value in bundle.defaults["item_specifics"].items():
+        assert len(name)  <= 40, f"specific name {name!r} is {len(name)} chars (>40)"
+        assert len(str(value)) <= 65, (
+            f"specific {name!r} value is {len(str(value))} chars (>65): {value!r}"
+        )
+
+
 def test_description_template_has_size_clause_placeholder():
     bundle = presets.load(PRESETS_DIR)
     assert "{size_clause}" in bundle.description_template
@@ -48,12 +144,13 @@ def test_description_template_has_size_clause_placeholder():
 
 def test_product_entries_are_frozen_with_required_fields():
     bundle = presets.load(PRESETS_DIR)
-    p = bundle.product("16x12_mount")
+    p = bundle.product("16x12_mount_a")
     assert p.template_id == "16x12-a-mount"
-    assert p.default_price_gbp == pytest.approx(54.99)
+    assert p.default_price_gbp == pytest.approx(49.99)
     assert "16x12" in p.size_clause
     assert "{name}" in p.title_pattern
-    assert "{qualifier_suffix}" in p.title_pattern
+    # New title pattern uses {team_suffix}, not {qualifier_suffix}
+    assert "{team_suffix}" in p.title_pattern
 
 
 def test_unknown_product_key_raises():
@@ -68,28 +165,30 @@ def test_unknown_product_key_raises():
 
 def test_render_title_basic():
     bundle = presets.load(PRESETS_DIR)
-    title = presets.render_title(bundle, "a4_photo", "Tim Allen")
-    assert title.startswith("Tim Allen Signed A4 Photo Autograph")
-    assert "  " not in title  # no accidental double space from empty qualifier
+    title = presets.render_title(bundle, "photo_10x8", "Tim Allen")
+    assert title.startswith("Tim Allen Signed 10x8 Photo Display Autograph")
+    assert "  " not in title  # no accidental double space from empty team_suffix
 
 
 def test_render_title_with_qualifier():
     bundle = presets.load(PRESETS_DIR)
-    title = presets.render_title(bundle, "a4_photo", "Mel C", qualifier="Spice Girls")
+    title = presets.render_title(
+        bundle, "photo_10x8", "Mel C", qualifier="Spice Girls"
+    )
     assert " Spice Girls " in title
 
 
 def test_render_title_empty_qualifier_is_same_as_none():
     bundle = presets.load(PRESETS_DIR)
-    a = presets.render_title(bundle, "a4_photo", "Tim Allen", qualifier="")
-    b = presets.render_title(bundle, "a4_photo", "Tim Allen", qualifier=None)
+    a = presets.render_title(bundle, "photo_10x8", "Tim Allen", qualifier="")
+    b = presets.render_title(bundle, "photo_10x8", "Tim Allen", qualifier=None)
     assert a == b
 
 
 def test_render_title_whitespace_qualifier_is_stripped():
     bundle = presets.load(PRESETS_DIR)
-    a = presets.render_title(bundle, "a4_photo", "Tim Allen", qualifier="   ")
-    b = presets.render_title(bundle, "a4_photo", "Tim Allen", qualifier=None)
+    a = presets.render_title(bundle, "photo_10x8", "Tim Allen", qualifier="   ")
+    b = presets.render_title(bundle, "photo_10x8", "Tim Allen", qualifier=None)
     assert a == b
 
 
@@ -98,7 +197,7 @@ def test_render_title_raises_if_too_long():
     with pytest.raises(presets.PresetsError):
         presets.render_title(
             bundle,
-            "a4_photo",
+            "photo_10x8",
             "X" * 100,  # force over 80 chars
         )
 
@@ -109,7 +208,7 @@ def test_render_title_raises_if_too_long():
 
 def test_render_description_substitutes_size_clause():
     bundle = presets.load(PRESETS_DIR)
-    html = presets.render_description(bundle, "16x12_mount")
+    html = presets.render_description(bundle, "16x12_mount_a")
     assert "{size_clause}" not in html
     # The 16x12 mount size_clause mentions 16x12
     assert "16x12" in html
@@ -126,7 +225,7 @@ def test_render_description_supports_extra_placeholders():
         categories_by_subject=bundle.categories_by_subject,
     )
     html = presets.render_description(
-        hacked, "a4_photo", extra_placeholders={"player": "Mel C"}
+        hacked, "photo_10x8", extra_placeholders={"player": "Mel C"}
     )
     assert "<p>Player: Mel C</p>" in html
 
@@ -137,16 +236,22 @@ def test_render_description_supports_extra_placeholders():
 
 def test_pick_template_id_plain_photo_returns_none():
     bundle = presets.load(PRESETS_DIR)
-    assert presets.pick_template_id(bundle, "a4_photo") is None
+    assert presets.pick_template_id(bundle, "photo_6x4") is None
+    assert presets.pick_template_id(bundle, "card_only") is None
 
 
 def test_pick_template_id_uses_product_default():
     bundle = presets.load(PRESETS_DIR)
-    assert presets.pick_template_id(bundle, "16x12_mount") == "16x12-a-mount"
-    assert presets.pick_template_id(bundle, "a4_mount") == "a4-a-mount"
+    # Each mount/frame variant has its own product key → template_id
+    # maps 1:1 to the template folder. No variant-picking needed here.
+    assert presets.pick_template_id(bundle, "16x12_mount_a") == "16x12-a-mount"
+    assert presets.pick_template_id(bundle, "16x12_mount_c") == "16x12-c-mount"
+    assert presets.pick_template_id(bundle, "a4_mount_a") == "a4-a-mount"
+    assert presets.pick_template_id(bundle, "a4_frame_b") == "a4-b-frame"
 
 
 def test_pick_template_id_orientation_landscape_portrait():
+    """10x8 mount/frame use the variants block to pick land/port."""
     bundle = presets.load(PRESETS_DIR)
     assert presets.pick_template_id(
         bundle, "10x8_mount", orientation="landscape"
@@ -157,22 +262,6 @@ def test_pick_template_id_orientation_landscape_portrait():
     assert presets.pick_template_id(
         bundle, "10x8_frame", orientation="portrait"
     ) == "10x8-frame-port"
-
-
-def test_pick_template_id_explicit_variant_wins():
-    bundle = presets.load(PRESETS_DIR)
-    picked = presets.pick_template_id(
-        bundle, "16x12_mount", variant="16x12-c-mount"
-    )
-    assert picked == "16x12-c-mount"
-
-
-def test_pick_template_id_rejects_unknown_variant():
-    bundle = presets.load(PRESETS_DIR)
-    with pytest.raises(presets.PresetsError):
-        presets.pick_template_id(
-            bundle, "16x12_mount", variant="16x12-z-mount"
-        )
 
 
 # --------------------------------------------------------------------------- #
@@ -199,16 +288,16 @@ def test_build_listing_shape():
     bundle = presets.load(PRESETS_DIR)
     listing = presets.build_listing(
         bundle,
-        product_key="a4_photo",
+        product_key="photo_10x8",
         name="Tim Allen",
         subject="film_tv",
     )
     # Core fields
-    assert listing["product_key"] == "a4_photo"
+    assert listing["product_key"] == "photo_10x8"
     assert listing["template_id"] is None
-    assert listing["title"].startswith("Tim Allen Signed A4 Photo")
+    assert listing["title"].startswith("Tim Allen Signed 10x8 Photo")
     assert "{size_clause}" not in listing["description_html"]
-    assert listing["price_gbp"] == pytest.approx(29.99)
+    assert listing["price_gbp"] == pytest.approx(19.99)
     assert listing["category_id"] == 2312  # film_tv
     # Defaults came through
     assert listing["marketplace"]["site"] == "EBAY_GB"
@@ -225,7 +314,7 @@ def test_build_listing_includes_seller_profiles():
     bundle = presets.load(PRESETS_DIR)
     listing = presets.build_listing(
         bundle,
-        product_key="a4_photo",
+        product_key="photo_10x8",
         name="Tim Allen",
     )
     sp = listing["seller_profiles"]
@@ -238,7 +327,7 @@ def test_build_listing_has_postal_code():
     bundle = presets.load(PRESETS_DIR)
     listing = presets.build_listing(
         bundle,
-        product_key="a4_photo",
+        product_key="photo_10x8",
         name="Tim Allen",
     )
     assert listing["marketplace"]["postal_code"] == "M29 8DL"
@@ -248,7 +337,7 @@ def test_build_listing_price_override():
     bundle = presets.load(PRESETS_DIR)
     listing = presets.build_listing(
         bundle,
-        product_key="16x12_mount",
+        product_key="16x12_mount_a",
         name="Alan Hansen",
         price_gbp=75.00,
     )
@@ -259,7 +348,7 @@ def test_build_listing_item_specifics_merged():
     bundle = presets.load(PRESETS_DIR)
     listing = presets.build_listing(
         bundle,
-        product_key="16x12_mount",
+        product_key="16x12_mount_a",
         name="Alan Hansen",
         subject="football_retired",
         item_specifics={"Player": "Alan Hansen", "Team": "Liverpool"},
@@ -285,7 +374,7 @@ def test_build_listing_overrides_deep_merge():
     bundle = presets.load(PRESETS_DIR)
     listing = presets.build_listing(
         bundle,
-        product_key="a4_photo",
+        product_key="photo_10x8",
         name="Tim Allen",
         overrides={
             "listing": {"dispatch_time_max": 2},          # patch one field
@@ -301,8 +390,374 @@ def test_build_listing_overrides_deep_merge():
 
 
 # --------------------------------------------------------------------------- #
+# Catalog metadata — new in the 22-product rewrite
+# --------------------------------------------------------------------------- #
+
+def test_layout_groups_pair_mounts_with_frames():
+    """Every mount layout should have exactly one frame twin (same `layout`)."""
+    bundle = presets.load(PRESETS_DIR)
+    by_layout: dict[str, list[str]] = {}
+    for key, prod in bundle.products.items():
+        layout = prod.raw.get("layout")
+        by_layout.setdefault(layout, []).append(key)
+
+    # 9 mount/frame layouts should each have exactly 2 entries (mount + frame)
+    mount_frame_layouts = [
+        "a4_a", "a4_b", "10x8",
+        "16x12_a", "16x12_b", "16x12_c",
+        "16x12_d", "16x12_e", "16x12_f",
+    ]
+    for layout in mount_frame_layouts:
+        assert layout in by_layout, f"layout {layout!r} missing from catalog"
+        entries = by_layout[layout]
+        assert len(entries) == 2, \
+            f"layout {layout!r} should have mount+frame twin, got {entries}"
+        frames = [
+            k for k in entries if bundle.products[k].raw.get("frame")
+        ]
+        mounts = [
+            k for k in entries if not bundle.products[k].raw.get("frame")
+        ]
+        assert len(frames) == 1, f"{layout}: expected 1 frame, got {frames}"
+        assert len(mounts) == 1, f"{layout}: expected 1 mount, got {mounts}"
+
+
+def test_photo_only_products_have_no_template_and_no_secondary():
+    bundle = presets.load(PRESETS_DIR)
+    for key in ("photo_6x4", "photo_10x8", "photo_12x8", "card_only"):
+        p = bundle.product(key)
+        assert p.template_id is None, f"{key} should have template_id=None"
+        assert p.raw.get("needs_secondary") is None
+
+
+def test_products_carry_suggested_prices_list():
+    bundle = presets.load(PRESETS_DIR)
+    for key, prod in bundle.products.items():
+        sp = prod.raw.get("suggested_prices")
+        assert isinstance(sp, list) and len(sp) >= 3, \
+            f"{key} missing suggested_prices (need ≥3)"
+        # Default should be in the suggested list
+        assert prod.default_price_gbp in sp, \
+            f"{key}: default_price_gbp {prod.default_price_gbp} not in suggested_prices {sp}"
+
+
+# --------------------------------------------------------------------------- #
 # _deep_merge unit test
 # --------------------------------------------------------------------------- #
+
+# --------------------------------------------------------------------------- #
+# knowledge.yaml — loader + per-category rules
+# --------------------------------------------------------------------------- #
+
+def test_knowledge_loaded_into_bundle():
+    bundle = presets.load(PRESETS_DIR)
+    assert isinstance(bundle.knowledge, dict)
+    # The real file ships with at least these two top-level blocks.
+    assert "categories" in bundle.knowledge
+    assert "clubs" in bundle.knowledge
+
+
+def test_category_rule_known_and_unknown():
+    bundle = presets.load(PRESETS_DIR)
+    football = bundle.category_rule("Football")
+    assert football["field1_label"] == "Club"
+    assert football.get("in_title") is False
+    rugby = bundle.category_rule("Rugby")
+    assert rugby.get("in_title") is True
+    # Fail-open: unknown and None both return empty dict.
+    assert bundle.category_rule("Klingon Opera") == {}
+    assert bundle.category_rule(None) == {}
+
+
+def test_expand_club_short_to_full():
+    bundle = presets.load(PRESETS_DIR)
+    assert bundle.expand_club("Man Utd") == "Manchester United"
+    assert bundle.expand_club("Spurs") == "Tottenham Hotspur"
+    assert bundle.expand_club("Nowhere FC") is None
+    assert bundle.expand_club(None) is None
+
+
+# --------------------------------------------------------------------------- #
+# render_title — new knowledge-driven behaviour
+# --------------------------------------------------------------------------- #
+
+def test_render_title_with_field1_injects_team_suffix():
+    bundle = presets.load(PRESETS_DIR)
+    title = presets.render_title(
+        bundle,
+        "photo_10x8",
+        "Wayne Rooney",
+        field1="Man Utd",
+        category="Football",
+    )
+    # Football has in_title: false → just the club short form.
+    assert " Man Utd " in title
+    # Category word must NOT appear when in_title is false.
+    assert "Football" not in title
+
+
+def test_render_title_category_in_title_appends_category_word():
+    bundle = presets.load(PRESETS_DIR)
+    # Short names so the full form fits in 80.
+    title = presets.render_title(
+        bundle,
+        "photo_10x8",
+        "Joe Root",
+        field1="Leicester",  # short
+        category="Rugby",    # in_title: true
+    )
+    assert "Leicester Rugby" in title
+
+
+def test_render_title_drops_category_when_too_long():
+    """
+    Keane Lewis-Potter + 'Brentford FC' + Football on the A4 framed pattern:
+    the full form overflows by 1 char so 'Football' is dropped, and the
+    shorter " Brentford FC" form is picked.
+    """
+    bundle = presets.load(PRESETS_DIR)
+    title = presets.render_title(
+        bundle,
+        "a4_frame_a",
+        "Keane Lewis-Potter",
+        field1="Brentford FC",
+        category="Football",
+    )
+    assert "Brentford FC" in title
+    # 'Football' must not appear as a standalone category suffix.
+    assert not title.endswith("Football Autograph")
+    assert len(title) <= 80
+
+
+def test_render_title_drops_field1_when_still_too_long():
+    """
+    Extreme case: even the '<field1>' form blows the 80-char budget.
+    The renderer should fall all the way back to an empty team_suffix
+    rather than raising, so the listing still gets a valid (if less
+    search-rich) title.
+    """
+    bundle = presets.load(PRESETS_DIR)
+    # A4 Mount A + Keane Lewis-Potter (18) + ' Brighton and Hove Albion' (25)
+    # overflows 80 even without a category.
+    title = presets.render_title(
+        bundle,
+        "a4_mount_a",
+        "Keane Lewis-Potter",
+        field1="Brighton and Hove Albion",
+        category="Football",
+    )
+    assert "Brighton and Hove Albion" not in title
+    assert "Keane Lewis-Potter" in title
+    assert len(title) <= 80
+
+
+def test_render_title_appends_memorabilia_and_coa_when_room():
+    """
+    Short name + short (or no) team_suffix leaves lots of dead space in
+    a 10x8 photo title. The filler loop should tack on ' Memorabilia'
+    AND ' COA' because both fit inside the 80-char budget.
+    """
+    bundle = presets.load(PRESETS_DIR)
+    title = presets.render_title(bundle, "photo_10x8", "Tim Allen")
+    assert title.endswith("Memorabilia COA")
+    assert len(title) <= 80
+
+
+def test_render_title_packs_memorabilia_but_not_coa_when_tight():
+    """
+    Mid-budget case: Memorabilia fits but there's not enough room left
+    for ' COA' as well. Memorabilia goes in (it's the higher-value
+    token) and COA is dropped.
+    """
+    bundle = presets.load(PRESETS_DIR)
+    # a4_mount_a base = 40 chars; " Memorabilia" = 12, " COA" = 4.
+    # Name + team_suffix = 80 - 40 - 12 = 28 chars would be max to fit
+    # Memorabilia without COA. Need name+team in the 25..28 range.
+    title = presets.render_title(
+        bundle,
+        "a4_mount_a",
+        "Keane Lewis-Potter",           # 18
+        field1="Brentford",              # " Brentford" = 10 → total suffix 10
+        category="Football",             # not in_title for football
+    )
+    assert "Brentford" in title
+    assert "Memorabilia" in title
+    assert "COA" not in title
+    assert len(title) <= 80
+
+
+def test_render_title_skips_filler_when_no_room():
+    """
+    Title already near the 80-char cap: neither filler token fits.
+    The rendered title should come back unchanged from the pre-filler form.
+    """
+    bundle = presets.load(PRESETS_DIR)
+    # photo_10x8 + "Keane Lewis-Potter" (18) + " Brighton and Hove Albion"
+    # (25) + static "Signed 10x8 Photo Display Autograph" → 78 chars.
+    # Neither ' Memorabilia' (12) nor ' COA' (4) can be appended.
+    title = presets.render_title(
+        bundle,
+        "photo_10x8",
+        "Keane Lewis-Potter",
+        field1="Brighton and Hove Albion",
+        category="Football",
+    )
+    assert "Brighton and Hove Albion" in title
+    assert "Memorabilia" not in title
+    assert " COA" not in title
+    assert len(title) <= 80
+
+
+def test_render_title_legacy_qualifier_still_works():
+    """Back-compat: callers passing `qualifier=` keep working."""
+    bundle = presets.load(PRESETS_DIR)
+    a = presets.render_title(
+        bundle, "photo_10x8", "Mel C", qualifier="Spice Girls"
+    )
+    b = presets.render_title(
+        bundle, "photo_10x8", "Mel C", field1="Spice Girls"
+    )
+    assert a == b
+
+
+# --------------------------------------------------------------------------- #
+# enrich_specifics_from_knowledge
+# --------------------------------------------------------------------------- #
+
+def test_enrich_specifics_football_club_with_full_name():
+    bundle = presets.load(PRESETS_DIR)
+    out = presets.enrich_specifics_from_knowledge(
+        bundle, field1="Man Utd", category="Football"
+    )
+    assert out["Club"] == "Man Utd"
+    assert out["Club (Full)"] == "Manchester United"
+    assert "Football" in out["Category Keywords"]
+    assert out["Category"] == "Football"
+
+
+def test_enrich_specifics_no_full_name_when_short_equals_full():
+    bundle = presets.load(PRESETS_DIR)
+    out = presets.enrich_specifics_from_knowledge(
+        bundle, field1="Liverpool", category="Football"
+    )
+    assert out["Club"] == "Liverpool"
+    # Liverpool has no short→full alias in knowledge.yaml, so no "(Full)" row.
+    assert "Club (Full)" not in out
+
+
+def test_enrich_specifics_unknown_category_empty():
+    bundle = presets.load(PRESETS_DIR)
+    assert presets.enrich_specifics_from_knowledge(
+        bundle, field1="Whoever", category="Klingon Opera"
+    ) == {}
+
+
+def test_enrich_specifics_char_limits():
+    """Enrichment must respect eBay's 40/65 char limits."""
+    bundle = presets.load(PRESETS_DIR)
+    out = presets.enrich_specifics_from_knowledge(
+        bundle, field1="Man Utd", category="Football"
+    )
+    for name, value in out.items():
+        assert len(name) <= 40, f"{name!r} is {len(name)} > 40"
+        assert len(value) <= 65, f"{name}={value!r} is {len(value)} > 65"
+
+
+# --------------------------------------------------------------------------- #
+# build_listing — new knowledge + BestOffer + layered specifics
+# --------------------------------------------------------------------------- #
+
+def test_build_listing_from_parsed_filename():
+    bundle = presets.load(PRESETS_DIR)
+    parsed = ParsedFilename(
+        name="Wayne Rooney",
+        field1="Man Utd",
+        category="Football",
+    )
+    listing = presets.build_listing(
+        bundle,
+        product_key="photo_10x8",
+        parsed=parsed,
+    )
+    # Title picked up field1 + category rule from knowledge.
+    assert "Wayne Rooney" in listing["title"]
+    assert "Man Utd" in listing["title"]
+    # Football has in_title:false, so "Football" stays out.
+    assert "Football" not in listing["title"]
+    # Subject auto-derived from knowledge → football_premier → its category id.
+    assert listing["category_id"] == bundle.categories_by_subject["football_premier"]
+
+
+def test_build_listing_layered_specifics_knowledge_then_caller():
+    bundle = presets.load(PRESETS_DIR)
+    listing = presets.build_listing(
+        bundle,
+        product_key="16x12_mount_a",
+        name="Alan Hansen",
+        field1="Liverpool",
+        category="Football",
+        item_specifics={
+            "Player": "Alan Hansen",
+            "Category": "Football Legend",   # caller override
+        },
+    )
+    sp = listing["item_specifics"]
+    # Layer 1: defaults.
+    assert sp["Signed"] == "Yes"
+    # Layer 2: knowledge enrichment.
+    assert sp["Club"] == "Liverpool"
+    assert "Football" in sp["Category Keywords"]
+    # Layer 4: caller wins over knowledge on the "Category" key.
+    assert sp["Category"] == "Football Legend"
+    assert sp["Player"] == "Alan Hansen"
+
+
+def test_build_listing_attaches_best_offer_for_99_prices():
+    bundle = presets.load(PRESETS_DIR)
+    listing = presets.build_listing(
+        bundle,
+        product_key="photo_10x8",
+        name="Tim Allen",
+    )
+    # Default price is £19.99 — BO enabled, thresholds from the curve.
+    bo = listing["best_offer"]
+    assert bo is not None
+    assert bo["list_price"] == pytest.approx(19.99)
+    assert bo["auto_accept"] > 0
+    assert bo["min_offer"] == pytest.approx(bo["auto_accept"] - 0.01)
+
+
+def test_build_listing_no_best_offer_for_round_price_override():
+    """A non-.99 price lookup fails soft → best_offer=None."""
+    bundle = presets.load(PRESETS_DIR)
+    listing = presets.build_listing(
+        bundle,
+        product_key="16x12_mount_a",
+        name="Alan Hansen",
+        price_gbp=75.00,
+    )
+    assert listing["best_offer"] is None
+    # Listing still built successfully at the override price.
+    assert listing["price_gbp"] == pytest.approx(75.00)
+
+
+def test_build_listing_no_best_offer_below_threshold():
+    """Listings at £14.99 are fixed-price only — no BO block."""
+    bundle = presets.load(PRESETS_DIR)
+    listing = presets.build_listing(
+        bundle,
+        product_key="card_only",
+        name="Somebody",
+        price_gbp=14.99,
+    )
+    assert listing["best_offer"] is None
+
+
+def test_build_listing_requires_name():
+    bundle = presets.load(PRESETS_DIR)
+    with pytest.raises(presets.PresetsError):
+        presets.build_listing(bundle, product_key="photo_10x8")
+
 
 def test_deep_merge_replaces_scalars_and_lists():
     base = {

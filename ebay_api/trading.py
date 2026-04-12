@@ -23,7 +23,7 @@ from __future__ import annotations
 import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
-from typing import Any, Optional
+from typing import Any, Iterable, Iterator, Optional
 
 from ebay_api.token_manager import _load_env, get_access_token
 
@@ -245,3 +245,200 @@ def get_item(item_id: str, include_description: bool = True) -> dict[str, Any]:
     if item_elem is None:
         raise TradingError(f"GetItem returned no <Item> for {item_id}")
     return _elem_to_dict(item_elem)
+
+
+# --------------------------------------------------------------------------- #
+# Audit-oriented helpers: full active-catalogue sweep.
+# --------------------------------------------------------------------------- #
+#
+# The audit tool needs every active listing in a consistent shape. These
+# helpers are separate from get_my_ebay_selling() above (which returns a
+# page at a time in a "good enough for humans" shape) because the audit
+# cache wants stream-yielded rows + currency extracted from XML
+# attributes + price normalised for SQLite.
+#
+
+def _first(elem: Optional[ET.Element], *paths: str) -> Optional[str]:
+    """Return the text of the first matching path, or None."""
+    if elem is None:
+        return None
+    for p in paths:
+        found = elem.find(p, NS_MAP)
+        if found is not None and found.text is not None:
+            return found.text
+    return None
+
+
+def _price_and_currency(
+    item: ET.Element,
+) -> tuple[Optional[float], Optional[str]]:
+    """
+    Pull the buy-it-now price and currency from a listing <Item>.
+    Falls back to the selling-status current price if BuyItNowPrice is
+    missing (some legacy listings only have the Current/Start price).
+    """
+    for path in (
+        "e:BuyItNowPrice",
+        "e:SellingStatus/e:CurrentPrice",
+        "e:StartPrice",
+    ):
+        el = item.find(path, NS_MAP)
+        if el is not None and el.text:
+            try:
+                price = float(el.text)
+            except ValueError:
+                continue
+            currency = el.attrib.get("currencyID")
+            return price, currency
+    return None, None
+
+
+def _row_from_item_elem(item: ET.Element) -> dict[str, Any]:
+    """Shape a <Item> element (as returned by GetMyeBaySelling) into an audit row."""
+    price, currency = _price_and_currency(item)
+    return {
+        "item_id":            _first(item, "e:ItemID"),
+        "title":              _first(item, "e:Title"),
+        "sku":                _first(item, "e:SKU"),
+        "category_id":        _first(
+            item, "e:PrimaryCategoryID", "e:PrimaryCategory/e:CategoryID"
+        ),
+        "category_name":      _first(
+            item, "e:PrimaryCategoryName", "e:PrimaryCategory/e:CategoryName"
+        ),
+        "price_gbp":          price,
+        "currency":           currency,
+        "quantity":           _as_int(_first(item, "e:Quantity")),
+        "quantity_available": _as_int(_first(item, "e:QuantityAvailable")),
+        "watch_count":        _as_int(_first(item, "e:WatchCount")),
+        "start_time":         _first(item, "e:ListingDetails/e:StartTime"),
+        "listing_type":       _first(item, "e:ListingType"),
+        "view_item_url":      _first(item, "e:ListingDetails/e:ViewItemURL"),
+    }
+
+
+def _as_int(s: Optional[str]) -> Optional[int]:
+    if s is None:
+        return None
+    try:
+        return int(s)
+    except (ValueError, TypeError):
+        return None
+
+
+def iter_active_items_summary(
+    *,
+    page_size: int = 200,
+    start_page: int = 1,
+    progress: Optional[Any] = None,
+) -> Iterator[dict[str, Any]]:
+    """
+    Stream every active listing's summary dict via GetMyeBaySelling.
+
+    Yields one dict per listing with the audit-row shape:
+        {item_id, title, sku, category_id, category_name,
+         price_gbp, currency, quantity, quantity_available, watch_count,
+         start_time, listing_type, view_item_url}
+
+    Does NOT include item specifics — that requires a per-item GetItem
+    call (see get_item()). The audit flow uses this function for the fast
+    catalogue sweep and defers the deep fetch.
+
+    `progress`, if given, is called as progress(page, total_pages,
+    total_entries) once per page so the CLI can render a progress bar.
+    """
+    page = max(1, int(start_page))
+    while True:
+        inner = (
+            "<ActiveList>"
+            "<Sort>TimeLeft</Sort>"
+            f"<Pagination><EntriesPerPage>{int(page_size)}</EntriesPerPage>"
+            f"<PageNumber>{page}</PageNumber></Pagination>"
+            "</ActiveList>"
+            "<DetailLevel>ReturnAll</DetailLevel>"
+        )
+        root = trading_call("GetMyeBaySelling", inner)
+        active = root.find("e:ActiveList", NS_MAP)
+        if active is None:
+            return
+
+        pagination = active.find("e:PaginationResult", NS_MAP)
+        total_pages = int(_text(pagination, "e:TotalNumberOfPages") or 0)
+        total_entries = int(_text(pagination, "e:TotalNumberOfEntries") or 0)
+        if progress is not None:
+            progress(page, total_pages, total_entries)
+
+        item_array = active.find("e:ItemArray", NS_MAP)
+        if item_array is not None:
+            for item in item_array.findall("e:Item", NS_MAP):
+                row = _row_from_item_elem(item)
+                if row["item_id"]:
+                    yield row
+
+        if page >= total_pages:
+            return
+        page += 1
+
+
+def get_items_bulk(
+    item_ids: Iterable[str],
+    *,
+    sleep: float = 0.5,
+    progress: Optional[Any] = None,
+) -> Iterator[tuple[str, dict[str, Any]]]:
+    """
+    Rate-limited GetItem sweep. Yields `(item_id, deep_row)` tuples
+    where deep_row has the audit-shape keys:
+
+        {item_specifics: dict, hit_count, quantity_sold, end_time,
+         condition_id}
+
+    item_specifics is a flat {name: value} dict (multi-value specifics
+    become a "|"-joined string, matching how ReviseFixedPriceItem wants
+    them returned later). Any error on a single item is logged via
+    `progress(item_id, error_str)` and skipped — the caller can choose
+    to retry on the next run since deep_fetched_at stays NULL.
+    """
+    import time
+
+    for item_id in item_ids:
+        try:
+            raw = get_item(item_id, include_description=False)
+        except TradingError as e:
+            if progress is not None:
+                progress(item_id, None, str(e))
+            continue
+
+        deep = _shape_deep_item(raw)
+        if progress is not None:
+            progress(item_id, deep, None)
+        yield item_id, deep
+        if sleep > 0:
+            time.sleep(sleep)
+
+
+def _shape_deep_item(raw: dict[str, Any]) -> dict[str, Any]:
+    """Pull the audit-relevant fields out of a GetItem response dict."""
+    specifics: dict[str, str] = {}
+    item_specs = raw.get("ItemSpecifics") or {}
+    nvl = item_specs.get("NameValueList")
+    if nvl:
+        entries = nvl if isinstance(nvl, list) else [nvl]
+        for entry in entries:
+            name = entry.get("Name")
+            value = entry.get("Value")
+            if not name:
+                continue
+            if isinstance(value, list):
+                specifics[name] = " | ".join(v for v in value if v)
+            else:
+                specifics[name] = value or ""
+
+    selling = raw.get("SellingStatus") or {}
+    return {
+        "item_specifics": specifics,
+        "hit_count":      _as_int(raw.get("HitCount")),
+        "quantity_sold":  _as_int(selling.get("QuantitySold")),
+        "end_time":       raw.get("ListingDetails", {}).get("EndTime") if isinstance(raw.get("ListingDetails"), dict) else None,
+        "condition_id":   raw.get("ConditionID"),
+    }

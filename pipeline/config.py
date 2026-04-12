@@ -44,8 +44,14 @@ def _expand(p: str) -> Path:
     return Path(os.path.expanduser(p)).resolve() if p else None
 
 
-def load(config_path: Path = CONFIG_PATH) -> Config:
-    """Load and validate ~/.klh/config.yaml."""
+def load(config_path: Optional[Path] = None) -> Config:
+    """Load and validate ~/.klh/config.yaml.
+
+    Reads the module-level CONFIG_PATH by default so tests can
+    monkey-patch `pcfg.CONFIG_PATH` and have it take effect.
+    """
+    if config_path is None:
+        config_path = CONFIG_PATH
     if not config_path.exists():
         raise ConfigError(
             f"Config file not found at {config_path}\n"

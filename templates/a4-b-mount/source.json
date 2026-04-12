@@ -1,0 +1,32 @@
+{
+  "source_psd": "/Volumes/Samsung_990_4TB/KLH/Products/A4-B Mount.psdt",
+  "canvas": [
+    3973,
+    3006
+  ],
+  "picture_bbox": [
+    537,
+    559,
+    1728,
+    2344
+  ],
+  "card_bbox": null,
+  "secondary_bbox": [
+    2007,
+    556,
+    3442,
+    1647
+  ],
+  "text_container": {
+    "name": "TEXT BOX",
+    "kind": "smartobject",
+    "bbox": [
+      2009,
+      1978,
+      3443,
+      2345
+    ]
+  },
+  "signed_by": null,
+  "name_layer": null
+}

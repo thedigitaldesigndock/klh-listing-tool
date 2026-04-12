@@ -17,25 +17,25 @@ text:
 - id: signed_by
   content: Personally Signed By
   bbox:
-  - 1906
-  - 2764
-  - 2879
+  - 2202
+  - 2750
+  - 2582
   - 2802
   font: Cambria
-  size: 38
+  size: 44
   align: center
   anchor: middle
 - id: name
   content: '{name}'
   bbox:
-  - 1972
-  - 2816
-  - 2802
-  - 2890
+  - 1977
+  - 2803
+  - 2807
+  - 2914
   font: Cambria
   size_range:
-  - 60
-  - 133
+  - 40
+  - 100
   align: center
   anchor: middle
   bold: true

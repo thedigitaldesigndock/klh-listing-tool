@@ -1,0 +1,202 @@
+# Knowledge base for listing enrichment.
+#
+# When Nicky names a file `<Name>_<Field1>_<Category>_<Price>.jpg`,
+# this file tells us:
+#   1. What kind of thing Field1 is (club, band, show, nickname, …)
+#      via the `categories` section keyed on `Category` (field 2).
+#   2. Whether `Category` itself should appear in the title as a keyword
+#      (Rugby yes, Football no — too common).
+#   3. Which keywords to pack into Item Specifics for that category.
+#   4. How to expand short club names to their full official form
+#      (Man Utd → Manchester United) so both variants end up in IS.
+#   5. Which klh preset subject/category to route the listing to.
+#
+# Add rows as Nicky/Kim hit new ones. Missing entries fail open — the
+# lister will still list, it just won't expand the alias.
+
+# ── CATEGORIES ─────────────────────────────────────────────────────────
+# Keyed on the Category field (field 2 of the filename stem).
+#
+# Schema per entry:
+#   in_title          — bool. True → add category word to title if fits.
+#                       False → title never mentions the category.
+#   is_keywords       — string. Space-joined keywords to dump into the
+#                       "Category Keywords" item specific.
+#   field1_label      — string. Item-specific name for the club/band/
+#                       show/nickname that lives in field 1.
+#   subject           — klh subject slug (used for category_id lookup).
+categories:
+  # ── Sports ──
+  Football:
+    in_title: false        # common enough that every buyer category-browses
+    is_keywords: "Football Soccer FIFA Premier League Champions"
+    field1_label: Club
+    subject: football_premier
+
+  Rugby:
+    in_title: true         # niche, worth the title slot
+    is_keywords: "Rugby Union League RFU Six Nations World Cup Premiership"
+    field1_label: Club
+    subject: default
+
+  Snooker:
+    in_title: true
+    is_keywords: "Snooker Billiards World Championship Crucible"
+    field1_label: Nickname
+    subject: default
+
+  Boxing:
+    in_title: true
+    is_keywords: "Boxing Heavyweight Champion WBA WBC IBF WBO World Title"
+    field1_label: Nickname
+    subject: default
+
+  Darts:
+    in_title: true
+    is_keywords: "Darts PDC World Championship Premier League BDO"
+    field1_label: Nickname
+    subject: default
+
+  Golf:
+    in_title: true
+    is_keywords: "Golf PGA Masters Open Championship Ryder Cup"
+    field1_label: Tour
+    subject: default
+
+  F1:
+    in_title: true
+    is_keywords: "F1 Formula 1 Grand Prix Motorsport Racing Driver"
+    field1_label: Team
+    subject: default
+
+  Cricket:
+    in_title: false
+    is_keywords: "Cricket Test Match Ashes ICC England County"
+    field1_label: County
+    subject: default
+
+  Tennis:
+    in_title: false
+    is_keywords: "Tennis Grand Slam Wimbledon ATP WTA"
+    field1_label: Nationality
+    subject: default
+
+  NFL:
+    in_title: true
+    is_keywords: "NFL American Football Super Bowl NFC AFC"
+    field1_label: Team
+    subject: default
+
+  NBA:
+    in_title: true
+    is_keywords: "NBA Basketball Eastern Western Conference"
+    field1_label: Team
+    subject: default
+
+  MMA:
+    in_title: true
+    is_keywords: "MMA UFC Mixed Martial Arts Octagon Champion"
+    field1_label: Weight Class
+    subject: default
+
+  # ── Music ──
+  Music:
+    in_title: false        # too generic for title
+    is_keywords: "Music Pop Rock Band Album Single Song"
+    field1_label: Band/Group
+    subject: music_pop
+
+  Rock:
+    in_title: true
+    is_keywords: "Rock Music Album Band Guitarist Drummer Vocalist"
+    field1_label: Band
+    subject: music_pop
+
+  Pop:
+    in_title: true
+    is_keywords: "Pop Music Chart Single Album Singer"
+    field1_label: Band
+    subject: music_pop
+
+  Indie:
+    in_title: true
+    is_keywords: "Indie Music Alternative Band Album"
+    field1_label: Band
+    subject: music_pop
+
+  Hip-Hop:
+    in_title: true
+    is_keywords: "Hip-Hop Rap Music Album Single"
+    field1_label: Group
+    subject: music_pop
+
+  # ── Film & TV ──
+  TV:
+    in_title: false        # "TV" in title looks cheap — use Show name instead
+    is_keywords: "TV Series Television Show Sitcom Drama"
+    field1_label: Show
+    subject: film_tv
+
+  Film:
+    in_title: true
+    is_keywords: "Film Movie Cinema Hollywood Motion Picture"
+    field1_label: Film Title
+    subject: film_tv
+
+  Comedy:
+    in_title: true
+    is_keywords: "Comedy Sitcom Comedian Stand Up"
+    field1_label: Show
+    subject: film_tv
+
+  Drama:
+    in_title: true
+    is_keywords: "Drama Series Show Television"
+    field1_label: Show
+    subject: film_tv
+
+# ── CLUBS ──────────────────────────────────────────────────────────────
+# Short form → full official name. The short form goes in the title
+# (when it fits), the full form goes in "Club (Full Name)" specific.
+# Entries without an alias (short == full) can be omitted — the lister
+# falls back to using the input verbatim.
+clubs:
+  # Premier League short forms
+  Man Utd:     Manchester United
+  Man City:    Manchester City
+  Spurs:       Tottenham Hotspur
+  Newcastle:   Newcastle United
+  West Ham:    West Ham United
+  Wolves:      Wolverhampton Wanderers
+  Brighton:    Brighton & Hove Albion
+  Leeds:       Leeds United
+  Palace:      Crystal Palace
+  Forest:      Nottingham Forest
+  Villa:       Aston Villa
+  Bournemouth: AFC Bournemouth
+  Norwich:     Norwich City
+  Cardiff:     Cardiff City
+  Swansea:     Swansea City
+  Hull:        Hull City
+  Leicester:   Leicester City
+  Stoke:       Stoke City
+  Sheff Utd:   Sheffield United
+  Sheff Wed:   Sheffield Wednesday
+  Birmingham:  Birmingham City
+  Ipswich:     Ipswich Town
+  Luton:       Luton Town
+  QPR:         Queens Park Rangers
+  # Scottish
+  Celtic:      Celtic
+  Rangers:     Rangers
+  # Rugby Union
+  Leicester Tigers: Leicester Tigers
+  Harlequins:       Harlequins
+  Saracens:         Saracens
+  Wasps:            Wasps
+  Bath:             Bath Rugby
+  # F1 (short → full constructor name)
+  Mercedes:   Mercedes AMG Petronas
+  Red Bull:   Oracle Red Bull Racing
+  Ferrari:    Scuderia Ferrari
+  McLaren:    McLaren F1 Team

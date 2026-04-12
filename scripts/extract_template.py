@@ -35,6 +35,7 @@ from pipeline import config
 # Slot-naming heuristics.
 PICTURE_NAMES = {"PICTURE", "Picture", "picture", "PIC", "Pic", "pic"}
 CARD_NAMES = {"CARD", "Card", "card"}
+SECONDARY_NAMES = {"PICTURE 2", "Picture 2", "picture 2", "PIC 2", "Pic 2"}
 
 # Font used across all templates.
 FONT_NAME = "Cambria"
@@ -84,6 +85,7 @@ def _scan(psd: PSDImage) -> dict:
     """Walk the PSD and pull out everything we might need."""
     picture_slot: Optional[ExtractedLayer] = None
     card_slot: Optional[ExtractedLayer] = None
+    secondary_slot: Optional[ExtractedLayer] = None
     text_box_container: Optional[ExtractedLayer] = None  # the shape/SO background plate
     signed_by_layer: Optional[ExtractedLayer] = None
     name_layer: Optional[ExtractedLayer] = None
@@ -100,6 +102,12 @@ def _scan(psd: PSDImage) -> dict:
             elif layer.name in CARD_NAMES:
                 bbox = _so_bbox(layer)
                 card_slot = ExtractedLayer(
+                    name=layer.name, kind="smartobject", bbox=bbox,
+                    layer_id=layer.layer_id,
+                )
+            elif layer.name in SECONDARY_NAMES:
+                bbox = _so_bbox(layer)
+                secondary_slot = ExtractedLayer(
                     name=layer.name, kind="smartobject", bbox=bbox,
                     layer_id=layer.layer_id,
                 )
@@ -147,6 +155,7 @@ def _scan(psd: PSDImage) -> dict:
     return {
         "picture": picture_slot,
         "card": card_slot,
+        "secondary": secondary_slot,
         "text_container": text_box_container,
         "signed_by": signed_by_layer,
         "name": name_layer,
@@ -169,7 +178,36 @@ def _compute_text_regions(scan: dict) -> list[dict]:
     name_layer = scan.get("name")
 
     if not signed_by and not name_layer:
-        return entries  # no text on this template (e.g. 10x8 Mount)
+        # If there's a text container but no type layers (e.g. A4-B templates
+        # where Kim's PSD has a blank TEXT BOX smart object), synthesize both
+        # text entries from the container bbox.
+        if container and container.bbox:
+            cx1, cy1, cx2, cy2 = container.bbox
+            pad = max(8, (cx2 - cx1) // 40)
+            x_left, x_right = cx1 + pad, cx2 - pad
+            # Split the container: top ~40% for "Personally Signed By",
+            # bottom ~60% for the name.
+            mid_y = cy1 + int((cy2 - cy1) * 0.40)
+            entries.append({
+                "id": "signed_by",
+                "content": "Personally Signed By",
+                "bbox": [x_left, cy1 + pad, x_right, mid_y],
+                "font": FONT_NAME,
+                "size": max(24, int((mid_y - cy1 - pad) * 0.55)),
+                "align": "center",
+                "anchor": "middle",
+            })
+            entries.append({
+                "id": "name",
+                "content": "{name}",
+                "bbox": [x_left, mid_y, x_right, cy2 - pad],
+                "font": FONT_NAME,
+                "size_range": list(NAME_SIZE_RANGE),
+                "align": "center",
+                "anchor": "middle",
+                "bold": True,
+            })
+        return entries
 
     # X bounds — prefer container, otherwise use the text layer's own X
     if container and container.bbox:
@@ -228,20 +266,30 @@ def _compute_text_regions(scan: dict) -> list[dict]:
     return entries
 
 
-def _render_base(psd: PSDImage, scan: dict) -> "PIL.Image.Image":
+def _render_base(psd: PSDImage, scan: dict, overlay_ids: list[int] | None = None) -> "PIL.Image.Image":
     """
-    Render the flattened base: mount with PICTURE, CARD, and text layers hidden.
+    Render the flattened base: mount with PICTURE, CARD, text, AND
+    overlay layers hidden. The base is the background that photos get
+    pasted onto — anything that should sit ON TOP of the photos belongs
+    in the overlay, not here.
+
     The TEXT BOX decorative plate stays visible (it's part of the mount).
     """
     # Collect layer_ids to hide
     hide_ids: set[int] = set()
-    for key in ("picture", "card"):
+    for key in ("picture", "card", "secondary"):
         if scan[key] and scan[key].layer_id is not None:
             hide_ids.add(scan[key].layer_id)
     for key in ("signed_by", "name"):
         if scan[key] and scan[key].layer_id is not None:
             hide_ids.add(scan[key].layer_id)
     hide_ids |= scan.get("text_group_ids", set())
+
+    # Also hide overlay layers — they render on top of the pasted photo
+    # separately. Without this, templates whose only raster content IS
+    # the overlay (e.g. simple 2-layer frame PSDs) get double shadows.
+    if overlay_ids:
+        hide_ids.update(overlay_ids)
 
     # Save original visibility and toggle
     saved: dict[int, bool] = {}
@@ -279,7 +327,7 @@ def _identify_overlay_layers(psd: PSDImage, scan: dict) -> list[int]:
     # Find the highest z-order index of PICTURE / CARD.
     slot_ids = {
         scan[k].layer_id
-        for k in ("picture", "card")
+        for k in ("picture", "card", "secondary")
         if scan[k] and scan[k].layer_id is not None
     }
     if not slot_ids:
@@ -334,10 +382,33 @@ def _render_overlay(psd: PSDImage, scan: dict) -> Optional["PIL.Image.Image"]:
         return None
 
     keep = set(overlay_ids)
+
+    # Build a set of group IDs that contain at least one overlay layer.
+    # We need these groups visible so psd_tools renders their children,
+    # but groups like "Frame" (hidden in mount PSDs) must stay hidden
+    # if none of their children are in the overlay set.
+    groups_with_overlay: set[int] = set()
+    for layer in psd.descendants():
+        if layer.layer_id in keep and layer.kind != "group":
+            # Walk up to find parent groups
+            parent = layer.parent
+            while parent is not None and parent is not psd:
+                if hasattr(parent, "layer_id"):
+                    groups_with_overlay.add(parent.layer_id)
+                parent = getattr(parent, "parent", None)
+
     saved: dict[int, bool] = {}
     for layer in psd.descendants():
         saved[layer.layer_id] = layer.visible
-        layer.visible = layer.layer_id in keep
+        if layer.kind == "group":
+            # Only enable groups that contain overlay children AND were
+            # originally visible in the PSD.
+            layer.visible = (
+                layer.layer_id in groups_with_overlay
+                and saved[layer.layer_id]
+            )
+        else:
+            layer.visible = layer.layer_id in keep
 
     try:
         img = psd.composite()
@@ -375,6 +446,12 @@ def extract(psd_path: Path, out_root: Path) -> Path:
             "scale_mode": "fit_cover",
             "background": None,
         }
+    if scan["secondary"] and scan["secondary"].bbox:
+        slots["secondary"] = {
+            "bbox": list(scan["secondary"].bbox),
+            "scale_mode": "fit_width_center",
+            "background": "#000000",
+        }
 
     text_entries = _compute_text_regions(scan)
 
@@ -397,9 +474,13 @@ def extract(psd_path: Path, out_root: Path) -> Path:
     with open(spec_path, "w") as f:
         yaml.safe_dump(spec, f, sort_keys=False, default_flow_style=False)
 
-    # Render base (mount with PICTURE/CARD/text layers hidden — this is
-    # the background everything gets pasted onto).
-    base = _render_base(psd, scan)
+    # Identify overlay layers FIRST — we need the list for both the
+    # base render (to exclude them) and the overlay render.
+    overlay_ids = _identify_overlay_layers(psd, scan)
+
+    # Render base (mount with PICTURE/CARD/text/overlay layers hidden —
+    # this is the background everything gets pasted onto).
+    base = _render_base(psd, scan, overlay_ids=overlay_ids)
     base_path = slug_dir / "base.png"
     base.save(base_path)
 
@@ -413,11 +494,24 @@ def extract(psd_path: Path, out_root: Path) -> Path:
     elif overlay_path.exists():
         overlay_path.unlink()
 
-    # Tiny preview
-    preview = base.copy()
-    preview.thumbnail((400, 400))
+    # Tiny preview — composite base + overlay so the preview shows the
+    # full template appearance (not just the bare background).
+    from PIL import Image as _PILImage
+    if overlay is not None:
+        preview = base.convert("RGBA").copy()
+        preview.alpha_composite(overlay)
+    else:
+        preview = base.copy()
+    # Trim transparent edges (shadow overflow) and place on light grey.
+    preview = preview.convert("RGBA")
+    trim_box = preview.getbbox()
+    if trim_box:
+        preview = preview.crop(trim_box)
+    bg = _PILImage.new("RGB", preview.size, (245, 245, 247))
+    bg.paste(preview, (0, 0), preview)
+    bg.thumbnail((400, 400))
     preview_path = slug_dir / "preview.jpg"
-    preview.convert("RGB").save(preview_path, quality=85)
+    bg.save(preview_path, quality=85)
 
     # Debug: dump raw scan
     debug_path = slug_dir / "source.json"
@@ -428,6 +522,7 @@ def extract(psd_path: Path, out_root: Path) -> Path:
                 "canvas": [psd.width, psd.height],
                 "picture_bbox": scan["picture"].bbox if scan["picture"] else None,
                 "card_bbox": scan["card"].bbox if scan["card"] else None,
+                "secondary_bbox": scan["secondary"].bbox if scan["secondary"] else None,
                 "text_container": {
                     "name": scan["text_container"].name,
                     "kind": scan["text_container"].kind,

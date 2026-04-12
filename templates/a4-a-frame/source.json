@@ -16,6 +16,7 @@
     3311,
     1554
   ],
+  "secondary_bbox": null,
   "text_container": {
     "name": "TEXT BOX",
     "kind": "smartobject",

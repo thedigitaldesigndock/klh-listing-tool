@@ -11,6 +11,7 @@
     3492
   ],
   "card_bbox": null,
+  "secondary_bbox": null,
   "text_container": {
     "name": "TEXT BOX",
     "kind": "shape",

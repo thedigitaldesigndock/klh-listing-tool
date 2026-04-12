@@ -1,10 +1,21 @@
 """
 Phase 1 — Picture / Card matcher.
 
-Reads the picture and card inbox directories, pairs by exact stem,
-reports unmatched items, and for each unmatched item suggests the
-closest name on the other side via Levenshtein distance. Also flags
-non-JPG files that need format normalization before mockup.
+Reads the picture and card inbox directories, pairs by the filename
+*pair_key* (stem minus price), reports unmatched items, and for each
+unmatched item suggests the closest name on the other side via
+Levenshtein distance. Also flags non-JPG files that need format
+normalization before mockup.
+
+Pair_key comes from pipeline.filename.parse_stem. Example:
+
+    Picture:  Wayne Rooney_Man Utd_Football_1_49.99.jpg
+    Card:     Wayne Rooney_Man Utd_Football_1.jpg
+
+Both files have `pair_key == "Wayne Rooney_Man Utd_Football_1"` and
+pair up. The picture's price (49.99) is captured separately and
+reattached when we generate rename suggestions so typo-fixes don't
+accidentally drop the price tag.
 
 Pure read by default. With --fix, prompts to rename files based on
 the Levenshtein suggestions.
@@ -26,6 +37,7 @@ from typing import Optional
 import Levenshtein
 
 from pipeline import config
+from pipeline.filename import parse_stem
 
 # Image formats we recognise. JPG is the target; others need normalization.
 JPG_EXTS = {".jpg", ".jpeg"}
@@ -43,16 +55,23 @@ MAX_TYPO_DISTANCE = 5
 @dataclass
 class ImageFile:
     path: Path
-    stem: str  # filename without extension
-    ext: str   # extension including leading dot, lowercased
+    stem: str                         # filename without extension
+    ext: str                          # extension including leading dot, lowercased
     is_jpg: bool
     is_convertible: bool
     is_unknown: bool
+    pair_key: str = ""                # stem minus price (shared by picture + card)
+    price: Optional[float] = None     # trailing .99 price if any (pictures only)
 
 
 @dataclass
 class Suggestion:
-    """A fuzzy-match suggestion: rename `src` to `target_stem` to create a pair."""
+    """A fuzzy-match suggestion: rename `src` to `suggested_stem` to create a pair.
+
+    `suggested_stem` is the complete new stem (WITH the price tag still
+    attached if the src originally had one). `apply_fixes` renames the
+    file to `suggested_stem + src.suffix` directly — no further munging.
+    """
     src: Path
     side: str              # "picture" or "card"
     suggested_stem: str
@@ -65,7 +84,7 @@ class MatchReport:
     card_dir: Path
     pictures: list[ImageFile] = field(default_factory=list)
     cards: list[ImageFile] = field(default_factory=list)
-    matched_stems: list[str] = field(default_factory=list)
+    matched_pair_keys: list[str] = field(default_factory=list)
     unmatched_pictures: list[ImageFile] = field(default_factory=list)
     unmatched_cards: list[ImageFile] = field(default_factory=list)
     needs_normalize: list[ImageFile] = field(default_factory=list)
@@ -97,6 +116,7 @@ def _scan(directory: Path) -> list[ImageFile]:
         if p.name in IGNORE_NAMES or p.name.startswith("."):
             continue
         ext = p.suffix.lower()
+        parsed = parse_stem(p.stem)
         files.append(
             ImageFile(
                 path=p,
@@ -105,6 +125,8 @@ def _scan(directory: Path) -> list[ImageFile]:
                 is_jpg=ext in JPG_EXTS,
                 is_convertible=ext in CONVERTIBLE_EXTS,
                 is_unknown=ext not in IMAGE_EXTS,
+                pair_key=parsed.pair_key,
+                price=parsed.price,
             )
         )
     return files
@@ -118,6 +140,18 @@ def _closest(target: str, candidates: list[str]) -> tuple[Optional[str], int]:
     return best, Levenshtein.distance(target, best)
 
 
+def _stem_for(pair_key: str, price: Optional[float]) -> str:
+    """Re-attach a price tag to a pair_key to form a full stem.
+
+    Used when generating rename suggestions: we want the new stem to
+    carry the SOURCE file's own price tag, not the target's. Cards
+    have price=None so they stay priceless; pictures keep their price.
+    """
+    if price is None:
+        return pair_key
+    return f"{pair_key}_{price:.2f}"
+
+
 def match(picture_dir: Path, card_dir: Path) -> MatchReport:
     """
     Run the full matcher. Returns a MatchReport with everything the
@@ -127,55 +161,68 @@ def match(picture_dir: Path, card_dir: Path) -> MatchReport:
     report.pictures = _scan(picture_dir)
     report.cards = _scan(card_dir)
 
-    # Index by stem for pairing. An unknown-format file is still matchable
-    # by name — the issue is just format, not pairing.
-    pics_by_stem: dict[str, ImageFile] = {}
+    # Index by pair_key for pairing. An unknown-format file is still
+    # matchable by name — the issue is just format, not pairing.
+    pics_by_key: dict[str, ImageFile] = {}
     for f in report.pictures:
         if f.is_unknown:
             report.unknown_format.append(f)
             continue
         if f.is_convertible:
             report.needs_normalize.append(f)
-        pics_by_stem.setdefault(f.stem, f)
+        pics_by_key.setdefault(f.pair_key, f)
 
-    cards_by_stem: dict[str, ImageFile] = {}
+    cards_by_key: dict[str, ImageFile] = {}
     for f in report.cards:
         if f.is_unknown:
             report.unknown_format.append(f)
             continue
         if f.is_convertible:
             report.needs_normalize.append(f)
-        cards_by_stem.setdefault(f.stem, f)
+        cards_by_key.setdefault(f.pair_key, f)
 
-    pic_stems = set(pics_by_stem)
-    card_stems = set(cards_by_stem)
+    pic_keys = set(pics_by_key)
+    card_keys = set(cards_by_key)
 
-    # Exact-stem pairing.
-    matched = pic_stems & card_stems
-    report.matched_stems = sorted(matched)
+    # Pair_key equality pairing.
+    matched = pic_keys & card_keys
+    report.matched_pair_keys = sorted(matched)
 
     # Unmatched on each side.
-    for stem in sorted(pic_stems - matched):
-        report.unmatched_pictures.append(pics_by_stem[stem])
-    for stem in sorted(card_stems - matched):
-        report.unmatched_cards.append(cards_by_stem[stem])
+    for key in sorted(pic_keys - matched):
+        report.unmatched_pictures.append(pics_by_key[key])
+    for key in sorted(card_keys - matched):
+        report.unmatched_cards.append(cards_by_key[key])
 
-    # Typo suggestions — look for close matches on the OTHER side.
-    unmatched_pic_stems = [f.stem for f in report.unmatched_pictures]
-    unmatched_card_stems = [f.stem for f in report.unmatched_cards]
+    # Typo suggestions — look for close pair_key matches on the OTHER
+    # side. The suggested_stem reattaches the SOURCE file's own price
+    # tag, so renaming a typoed picture keeps its price and renaming a
+    # card stays priceless.
+    unmatched_pic_keys = [f.pair_key for f in report.unmatched_pictures]
+    unmatched_card_keys = [f.pair_key for f in report.unmatched_cards]
 
     for f in report.unmatched_pictures:
-        best, dist = _closest(f.stem, unmatched_card_stems)
+        best, dist = _closest(f.pair_key, unmatched_card_keys)
         if best is not None and 0 < dist <= MAX_TYPO_DISTANCE:
             report.suggestions.append(
-                Suggestion(src=f.path, side="picture", suggested_stem=best, distance=dist)
+                Suggestion(
+                    src=f.path,
+                    side="picture",
+                    suggested_stem=_stem_for(best, f.price),
+                    distance=dist,
+                )
             )
 
     for f in report.unmatched_cards:
-        best, dist = _closest(f.stem, unmatched_pic_stems)
+        best, dist = _closest(f.pair_key, unmatched_pic_keys)
         if best is not None and 0 < dist <= MAX_TYPO_DISTANCE:
             report.suggestions.append(
-                Suggestion(src=f.path, side="card", suggested_stem=best, distance=dist)
+                Suggestion(
+                    src=f.path,
+                    side="card",
+                    suggested_stem=_stem_for(best, f.price),
+                    distance=dist,
+                )
             )
 
     return report
@@ -201,7 +248,7 @@ def render_human(report: MatchReport, color: bool = True) -> str:
 
     n_pic = len(report.pictures)
     n_card = len(report.cards)
-    n_matched = len(report.matched_stems)
+    n_matched = len(report.matched_pair_keys)
 
     lines.append(f"Pictures: {n_pic} files")
     lines.append(f"Cards:    {n_card} files")
@@ -216,10 +263,10 @@ def render_human(report: MatchReport, color: bool = True) -> str:
         lines.append(c(_yellow, c(_bold, score)))
     lines.append("")
 
-    if report.matched_stems:
+    if report.matched_pair_keys:
         lines.append(c(_bold, "Matched pairs:"))
-        for stem in report.matched_stems:
-            lines.append(f"  {c(_green, '✓')} {stem}")
+        for key in report.matched_pair_keys:
+            lines.append(f"  {c(_green, '✓')} {key}")
         lines.append("")
 
     if report.unmatched_pictures:
@@ -297,6 +344,8 @@ def render_json(report: MatchReport) -> str:
             "ext": f.ext,
             "is_jpg": f.is_jpg,
             "is_convertible": f.is_convertible,
+            "pair_key": f.pair_key,
+            "price": f.price,
         }
 
     return json.dumps(
@@ -305,12 +354,15 @@ def render_json(report: MatchReport) -> str:
             "card_dir": str(report.card_dir),
             "picture_count": len(report.pictures),
             "card_count": len(report.cards),
-            "matched_count": len(report.matched_stems),
-            "matched": report.matched_stems,
+            "matched_count": len(report.matched_pair_keys),
+            "matched_pair_keys": report.matched_pair_keys,
             "unmatched_pictures": [image_to_dict(f) for f in report.unmatched_pictures],
             "unmatched_cards": [image_to_dict(f) for f in report.unmatched_cards],
             "needs_normalize": [image_to_dict(f) for f in report.needs_normalize],
             "unknown_format": [image_to_dict(f) for f in report.unknown_format],
+            "pictures_missing_price": [
+                image_to_dict(f) for f in report.pictures_missing_price
+            ],
             "suggestions": [
                 {
                     "src": str(s.src),
@@ -334,25 +386,31 @@ def _dedupe_suggestions(suggestions: list[Suggestion]) -> list[Suggestion]:
     (distance 1 either way), keep only ONE suggestion — renaming either
     side fixes the pair, renaming both would undo it. Keep the picture-
     side suggestion by convention.
+
+    Dedup key is the pair_key on each side (src pair_key + suggested
+    pair_key), NOT the full stem — because picture suggestions carry a
+    price tag and card suggestions don't, so full-stem comparison would
+    never see the two as the same pair.
     """
+    def _pair_key_of(suggestion: Suggestion) -> str:
+        # The src's pair_key is whatever parse_stem gives us on the
+        # src filename. The target pair_key is the same-but-typo-
+        # corrected pair_key (i.e. suggested_stem minus its price tag).
+        return parse_stem(suggestion.src.stem).pair_key
+
+    def _target_pair_key_of(suggestion: Suggestion) -> str:
+        return parse_stem(suggestion.suggested_stem).pair_key
+
+    # Prefer picture-side first (we want to keep picture-side when both
+    # exist), then dedupe on the unordered pair_key pair.
+    ordered = sorted(suggestions, key=lambda s: (0 if s.side == "picture" else 1))
+    final: list[Suggestion] = []
     seen: set = set()
-    deduped: list[Suggestion] = []
-    for s in suggestions:
-        key = frozenset((s.src.stem, s.suggested_stem))
+    for s in ordered:
+        key = frozenset((_pair_key_of(s), _target_pair_key_of(s)))
         if key in seen:
             continue
         seen.add(key)
-        deduped.append(s)
-    # Prefer picture-side when both exist (picture wins in iteration order).
-    deduped.sort(key=lambda s: (0 if s.side == "picture" else 1))
-    # Re-dedupe after the sort rearranged things (shouldn't matter but safe).
-    final: list[Suggestion] = []
-    seen2: set = set()
-    for s in deduped:
-        key = frozenset((s.src.stem, s.suggested_stem))
-        if key in seen2:
-            continue
-        seen2.add(key)
         final.append(s)
     return final
 

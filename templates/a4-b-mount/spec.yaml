@@ -1,0 +1,53 @@
+id: a4-b-mount
+name: A4-B Mount
+source_psd: A4-B Mount.psdt
+canvas:
+- 3973
+- 3006
+slots:
+  picture:
+    bbox:
+    - 537
+    - 559
+    - 1728
+    - 2344
+    scale_mode: fit_width_center
+    background: '#000000'
+  secondary:
+    bbox:
+    - 2007
+    - 556
+    - 3442
+    - 1647
+    scale_mode: fit_cover
+    background: null
+text:
+- id: signed_by
+  content: Personally Signed By
+  bbox:
+  - 2454
+  - 2059
+  - 3004
+  - 2117
+  font: Cambria
+  size: 58
+  align: center
+  anchor: middle
+- id: name
+  content: '{name}'
+  bbox:
+  - 2128
+  - 2112
+  - 3328
+  - 2235
+  font: Cambria
+  size_range:
+  - 60
+  - 133
+  align: center
+  anchor: middle
+  bold: true
+output:
+  format: jpg
+  quality: 92
+  max_dimension: null

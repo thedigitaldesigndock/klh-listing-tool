@@ -1,0 +1,53 @@
+id: a4-b-frame
+name: A4-B Frame
+source_psd: A4-B Frame.psdt
+canvas:
+- 3973
+- 3006
+slots:
+  picture:
+    bbox:
+    - 690
+    - 665
+    - 1755
+    - 2261
+    scale_mode: fit_width_center
+    background: '#000000'
+  secondary:
+    bbox:
+    - 2005
+    - 662
+    - 3288
+    - 1638
+    scale_mode: fit_cover
+    background: null
+text:
+- id: signed_by
+  content: Personally Signed By
+  bbox:
+  - 2021
+  - 2006
+  - 3275
+  - 2059
+  font: Cambria
+  size: 53
+  align: center
+  anchor: middle
+- id: name
+  content: '{name}'
+  bbox:
+  - 2109
+  - 2054
+  - 3179
+  - 2165
+  font: Cambria
+  size_range:
+  - 60
+  - 133
+  align: center
+  anchor: middle
+  bold: true
+output:
+  format: jpg
+  quality: 92
+  max_dimension: null

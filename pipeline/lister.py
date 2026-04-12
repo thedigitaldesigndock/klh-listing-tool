@@ -121,6 +121,47 @@ def _item_specifics_xml(specifics: dict[str, str]) -> str:
     return "".join(parts)
 
 
+def _best_offer_xml(bo: Optional[dict], currency: str) -> str:
+    """
+    Emit the `<BestOfferDetails>` + `<ListingDetails>` pair for a listing
+    that has BestOffer thresholds attached. Returns an empty string for
+    listings with `best_offer=None` (no-BO fixed price).
+
+    Shape — matches pipeline.offers.build_best_offer_xml so we stay
+    consistent with the reference implementation:
+
+        <BestOfferDetails>
+          <BestOfferEnabled>true</BestOfferEnabled>
+        </BestOfferDetails>
+        <ListingDetails>
+          <BestOfferAutoAcceptPrice currencyID="GBP">15.00</BestOfferAutoAcceptPrice>
+          <MinimumBestOfferPrice    currencyID="GBP">14.99</MinimumBestOfferPrice>
+        </ListingDetails>
+    """
+    if not bo:
+        return ""
+    try:
+        accept = float(bo["auto_accept"])
+        min_offer = float(bo["min_offer"])
+    except (KeyError, TypeError, ValueError) as e:
+        raise ListerError(
+            f"best_offer block is malformed: {bo!r} ({e})"
+        ) from e
+    return (
+        "<BestOfferDetails>"
+        "<BestOfferEnabled>true</BestOfferEnabled>"
+        "</BestOfferDetails>"
+        "<ListingDetails>"
+        f'<BestOfferAutoAcceptPrice currencyID="{currency}">'
+        f"{accept:.2f}"
+        f"</BestOfferAutoAcceptPrice>"
+        f'<MinimumBestOfferPrice currencyID="{currency}">'
+        f"{min_offer:.2f}"
+        f"</MinimumBestOfferPrice>"
+        "</ListingDetails>"
+    )
+
+
 def _seller_profiles_xml(profiles: dict[str, str]) -> str:
     """
     Emit the SellerProfiles block. All three profile IDs are required
@@ -251,6 +292,9 @@ def build_add_item_xml(
 
     # Item specifics
     parts.append(_item_specifics_xml(specifics))
+
+    # Best Offer thresholds (optional — skipped for no-BO listings)
+    parts.append(_best_offer_xml(listing.get("best_offer"), currency))
 
     # Business Policies
     parts.append(_seller_profiles_xml(profiles))
@@ -424,6 +468,141 @@ def end_listing(
         "item_id":  item_id,
         "end_time": _text(root, "e:EndTime"),
         "ack":      _text(root, "e:Ack"),
+    }
+
+
+# --------------------------------------------------------------------------- #
+# Revise (audit tool) — ReviseFixedPriceItem
+# --------------------------------------------------------------------------- #
+#
+# Used by `klh audit apply` to patch existing listings in place. The
+# golden rule: send the MINIMUM payload possible.
+#
+#   * Title is independent — send <Title> only.
+#   * Item specifics REPLACE the whole block — if you send <ItemSpecifics>,
+#     eBay blows away the existing specifics and writes what you sent.
+#     Callers must therefore merge `current` + `changes` before calling.
+#     We expose a `new_specifics_replace` param that takes the full merged
+#     dict, and an ergonomic `new_specifics_merge` helper that does the
+#     merge for you given the current specifics from the cache.
+#   * Pictures / Description / Price are out of scope for audit edits.
+#     Touching them risks search-ranking resets. The function refuses.
+#
+
+def _revise_specifics_xml(specifics: dict[str, str]) -> str:
+    """
+    Build the <ItemSpecifics> block for a Revise call. Unlike the
+    Add-side _item_specifics_xml() above, this always emits the block
+    (even if empty) because "empty = clear all specifics" is a valid
+    intent. Callers that want a no-op should pass new_specifics_replace=None.
+    """
+    parts = ["<ItemSpecifics>"]
+    for name, value in sorted(specifics.items()):
+        parts.append(
+            "<NameValueList>"
+            f"{_el('Name', name)}"
+            f"{_el('Value', value)}"
+            "</NameValueList>"
+        )
+    parts.append("</ItemSpecifics>")
+    return "".join(parts)
+
+
+def build_revise_item_xml(
+    item_id: str,
+    *,
+    new_title: Optional[str] = None,
+    new_specifics_replace: Optional[dict[str, str]] = None,
+) -> str:
+    """
+    Build the inner XML for ReviseFixedPriceItem. Only fields explicitly
+    provided are included — eBay treats unsent elements as "leave alone".
+
+    Exactly one of new_title / new_specifics_replace must be truthy
+    (otherwise there's nothing to revise).
+    """
+    if not item_id:
+        raise ListerError("revise: item_id is required")
+    if new_title is None and new_specifics_replace is None:
+        raise ListerError(
+            "revise: nothing to change — pass new_title or new_specifics_replace"
+        )
+    if new_title is not None:
+        if not new_title:
+            raise ListerError("revise: new_title must be non-empty")
+        if len(new_title) > MAX_TITLE_LEN:
+            raise ListerError(
+                f"revise: new_title is {len(new_title)} chars (>{MAX_TITLE_LEN})"
+            )
+
+    parts: list[str] = ["<Item>"]
+    parts.append(_el("ItemID", item_id))
+    if new_title is not None:
+        parts.append(_el("Title", new_title))
+    if new_specifics_replace is not None:
+        parts.append(_revise_specifics_xml(new_specifics_replace))
+    parts.append("</Item>")
+    return "".join(parts)
+
+
+def merge_specifics(
+    current: dict[str, str],
+    changes: dict[str, Optional[str]],
+) -> dict[str, str]:
+    """
+    Merge a map of proposed changes into a current specifics dict.
+    A value of None in `changes` deletes the key; any other value
+    overwrites or adds it. Returns a new dict (doesn't mutate input).
+    """
+    merged = dict(current)
+    for k, v in changes.items():
+        if v is None:
+            merged.pop(k, None)
+        else:
+            merged[k] = str(v)
+    return merged
+
+
+def revise_listing(
+    item_id: str,
+    *,
+    new_title: Optional[str] = None,
+    new_specifics_replace: Optional[dict[str, str]] = None,
+    confirm: bool = False,
+) -> dict[str, Any]:
+    """
+    Revise an existing fixed-price listing via ReviseFixedPriceItem.
+
+    `confirm=True` is required — same safety pattern as submit_listing().
+    Trading has no VerifyReviseFixedPriceItem, so the caller's "dry run"
+    is just building the XML and printing a diff without calling this.
+
+    Returns {item_id, ack, warnings, fees}.
+    """
+    if not confirm:
+        raise ListerError(
+            "revise_listing requires confirm=True. "
+            "For a dry-run, build the XML with build_revise_item_xml() "
+            "and print it without invoking this function."
+        )
+    inner = build_revise_item_xml(
+        item_id,
+        new_title=new_title,
+        new_specifics_replace=new_specifics_replace,
+    )
+    root = trading_call("ReviseFixedPriceItem", inner)
+    return {
+        "item_id":  item_id,
+        "ack":      _text(root, "e:Ack"),
+        "fees":     [],  # Revise returns fees but they're almost always zero
+        "warnings": [
+            {
+                "short": _text(err, "e:ShortMessage"),
+                "long":  _text(err, "e:LongMessage"),
+                "code":  _text(err, "e:ErrorCode"),
+            }
+            for err in root.findall("e:Errors", NS_MAP)
+        ],
     }
 
 

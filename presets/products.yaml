@@ -1,143 +1,393 @@
 # Per-product listing presets for KLHAutographs.
 #
-# Each product defines the difference from defaults.yaml: title pattern,
-# default price, description size_clause, and — for mockup-generating
-# products — the klh-listing-tool template ID that composites the
-# mockup image.
+# This file is the single source of truth for the dashboard product
+# grid, the CLI lister, and the mockup compositor. Each entry below is
+# one clickable tile in the dashboard.
 #
-# TITLE STRATEGY (revised, see conversation notes)
-# ------------------------------------------------
-# Only two things change between listings: the signer's {name} and —
-# very rarely — an optional {qualifier_suffix}. Everything else is
-# keyword-packed boilerplate tuned for eBay search:
+# ── Layout groups ────────────────────────────────────────────────────
+# The 9 mockup layouts each have a Mount and a Frame variant. The
+# dashboard shows 9 tiles with a top-of-page Mount/Frame toggle that
+# swaps each tile between its mount and frame twin. The 4 photo-only
+# products are always-visible fixed tiles (no mount/frame toggle).
 #
-#   * "Signed" + "Autograph" + "Hand Signed" (where room allows) cover
-#     the three distinct buyer searches for authenticity terms.
-#   * "Photo" is in every title — it's the single biggest buyer-search
-#     term for signed memorabilia on eBay UK.
-#   * "Memorabilia" hits the category-browse long-tail.
-#   * "Mount Display" / "Framed Photo Display" is the product term
-#     (already matches Kim's existing bestsellers).
-#   * "+COA" is in every title because Kim likes it there; the synonyms
-#     (Cert / LOA / Letter of Authorisation / Certificate) live in the
-#     Q&A-hack item specifics in defaults.yaml rather than eating title
-#     characters.
-#   * Team / show / film / sport is NOT in the title — it goes into
-#     item specifics (Team, Show Title, Movie Title, Sport etc.). This
-#     frees 10-20 chars per title for better keywords without losing
-#     any findability (eBay indexes both sources).
+# Total products: 22.
+#   9 mount layouts × 2 (mount + frame) = 18
+#   4 photo-only (6x4, 10x8, 12x8, card only)           =  4
+#                                                        ───
+#                                                         22
 #
-# Title patterns use {name} for the signed personality and
-# {qualifier_suffix} for an optional tag-on phrase (rarely used now
-# that team/show moved to item specifics). Trailing "{qualifier_suffix}"
-# inserts nothing when qualifier is empty.
+# The `layout` field groups each mount with its frame twin. Two entries
+# with the same `layout` are the mount/frame pair for a single dashboard
+# tile — one will have `frame: false`, the other `frame: true`.
 #
-# Max safe name length per product is the remainder after subtracting
-# fixed boilerplate from eBay's 80-char cap. Budgets are commented
-# per-product; names longer than the budget raise a ListerError.
+# ── Secondary slot ───────────────────────────────────────────────────
+# `needs_secondary` tells the matcher and dashboard what (if anything)
+# goes in the TWO/ folder:
+#   - null   : TWO/ is empty for this product (single-photo layouts)
+#   - card   : TWO/ holds a signed card scan (A-variants)
+#   - photo  : TWO/ holds a second photo scan (B-variants)
+# The compositor doesn't care which it is — it slots whatever's in TWO/
+# into the secondary bbox from spec.yaml. The distinction is for
+# dashboard UI hints and validation.
 #
-# `template_id` is null for plain photos (no Pillow compositing needed —
-# the scan IS the listing image). When set, the value must match a
-# folder under templates/ (e.g. `a4-a-mount`, `16x12-a-mount`).
+# ── Orientation lock ─────────────────────────────────────────────────
+# `orientation_lock` forces a main-photo orientation check at list time:
+#   - null       : either orientation accepted
+#   - landscape  : w > h; reject portrait scans with a clear error
+#   - portrait   : h > w; reject landscape scans
+#   - auto       : auto-pick a variant template based on aspect ratio
+#                  (used by 10x8 mount/frame to swap between land/port
+#                  internal templates without showing Nicky a choice)
 #
-# Evidence files: tests/fixtures/ebay_samples/<product_key>.json
+# ── Title strategy ───────────────────────────────────────────────────
+# `{name}` is the signer. `{team_suffix}` is filled in by presets.py
+# at render time from the filename's Field1 value — only inserted if
+# knowledge.yaml says the club/sport/show should appear in the title
+# AND the total title length stays ≤ 80 chars. If either check fails,
+# team_suffix renders as empty and the club/show drops into item
+# specifics instead.
+#
+# ── Suggested prices ─────────────────────────────────────────────────
+# `suggested_prices` is a short list of common prices for that product
+# family, shown as quick-pick chips next to each mockup's price input
+# in the dashboard. `default_price_gbp` is the chip that's pre-selected.
+# Nicky can always type any price he wants.
+#
+# Source: computed from Kim's 13,840 live eBay listings in audit.db
+# (2026-04-11). Floor ≈ P10, default ≈ P10, chips span P10–P75.
+# Mounts have no prior inventory so default = a4_photo floor + surcharge.
 
 products:
 
-  # ── Plain photos ─────────────────────────────────────────────────────
-  a4_photo:
-    template_id: null
-    title_pattern: "{name} Signed A4 Photo{qualifier_suffix} Autograph Memorabilia Gift +COA"
-    default_price_gbp: 29.99
-    size_clause: "an A4 (297mm x 210mm / 11.7in x 8.3in) Photograph Display."
-    # Boilerplate 54 chars → name budget 26
-    # Evidence: Tim Allen Signed A4 Photo (item 267361288052)
+  # ═════════════════════════════════════════════════════════════════════
+  # MOUNTS — 9 layouts (A4×2, 10x8×1, 16x12×6)
+  # ═════════════════════════════════════════════════════════════════════
 
-  10x8_photo:
-    template_id: null
-    title_pattern: "{name} Signed 10x8 Photo{qualifier_suffix} Autograph Memorabilia Display +COA"
-    default_price_gbp: 19.99
-    size_clause: "a Signed 10x8 Inch (254mm x 203mm) Photograph."
-    # Boilerplate 62 chars → name budget 18
-    # Evidence: Mel C / Alex Stepney Signed 10x8 Photo
-
-  12x8_photo:
-    template_id: null
-    title_pattern: "{name} Signed 12x8 Photo{qualifier_suffix} Autograph Memorabilia Display +COA"
-    default_price_gbp: 19.99
-    size_clause: "a Signed 12x8 Inch (30cm x 20cm) Photograph."
-    # Boilerplate 62 chars → name budget 18
-    # Evidence: Mike Doyle Signed 12x8 Photo (item 257059745434)
-
-  6x4_photo:
-    template_id: null
-    title_pattern: "{name} Hand Signed 6x4 Photo{qualifier_suffix} Autograph Memorabilia +COA"
-    default_price_gbp: 17.99
-    size_clause: "a Signed 6x4 Inch Photograph."
-    # Boilerplate 55 chars → name budget 25
-    # Evidence: Dan Castellaneta Signed 6x4 Photo (item 257101644712)
-
-  # ── Mount displays (Pillow-composited from template + picture + card) ─
-  a4_mount:
-    # A4-A Mount is the default variant; use a4-b-mount when available.
+  # ── Layout: a4_a  (6x4 main + signed card + name text) ───────────────
+  a4_mount_a:
+    button_label: "A4-A (Mount)"
+    layout: a4_a
+    frame: false
     template_id: a4-a-mount
-    title_pattern: "{name} Signed A4 Photo Mount Display{qualifier_suffix} Autograph Memorabilia +COA"
-    default_price_gbp: 39.99
-    size_clause: "an A4 Mount Display. The overall size of the piece is A4 (297mm x 210mm / 11.7in x 8.3in)."
-    # Boilerplate 63 chars → name budget 17
-    # Note: No active a4_mount listings found in first 2,000 — template
-    # exists but the product may be new/aspirational. Verify pricing.
-
-  10x8_mount:
-    template_id: 10x8-mount-land   # default to landscape; override per listing
-    title_pattern: "{name} Signed 10x8 Photo Mount Display{qualifier_suffix} Autograph Memorabilia +COA"
+    main_size: 6x4
+    needs_secondary: card
+    orientation_lock: null
+    title_pattern: "{name} Signed A4 Photo Mount Display{team_suffix} Autograph"
     default_price_gbp: 29.99
-    size_clause: "a 10x8 Inch Mount Display. The overall size of the piece is approx 12x10 Inches."
-    # Boilerplate 65 chars → name budget 15
-    # Note: No active 10x8_mount listings found. Pricing guessed
-    # between 10x8_photo (£19.99) and 16x12_mount (£54.99).
+    suggested_prices: [24.99, 29.99, 34.99, 39.99, 49.99]
+    size_clause: "an A4 Mount Display. The overall size of the piece is A4 (297mm x 210mm / 11.7in x 8.3in)."
+    # No prior inventory (new product). Floor = a4_photo P10 (29.99).
 
-  16x12_mount:
-    # Six variants A-F; default to 16x12-a-mount. Override via
-    # template_id override when listing from a specific variant.
-    template_id: 16x12-a-mount
-    title_pattern: "{name} Signed 16x12 Photo Mount Display{qualifier_suffix} Autograph Memorabilia +COA"
-    default_price_gbp: 54.99
-    size_clause: "a Genuine Hand Signed Large 16x12 Inch Photograph Display. The overall size of the piece is 16x12 Inches (40x30cm)."
-    # Boilerplate 66 chars → name budget 14
-    # Evidence: Alan Hansen 16x12 Mount Display (item 267507152141)
-
-  # ── Framed photo displays ────────────────────────────────────────────
-  a4_frame:
+  a4_frame_a:
+    button_label: "A4-A (Framed)"
+    layout: a4_a
+    frame: true
     template_id: a4-a-frame
-    title_pattern: "{name} Signed A4 Framed Photo Display{qualifier_suffix} Autograph Memorabilia +COA"
-    default_price_gbp: 119.99
-    size_clause: "an A4 (297mm x 210mm / 11.7in x 8.3in) Framed Photograph Display."
-    # Boilerplate 64 chars → name budget 16
-    # Evidence: Debbie Harry A4 Framed Photo (item 257301958734)
+    main_size: 6x4
+    needs_secondary: card
+    orientation_lock: null
+    title_pattern: "{name} Signed A4 Framed Photo Display{team_suffix} Autograph"
+    default_price_gbp: 49.99
+    suggested_prices: [49.99, 59.99, 74.99, 99.99, 119.99]
+    size_clause: "an A4 Framed Photo Display. The overall size of the piece is A4 (297mm x 210mm / 11.7in x 8.3in)."
+    # Inventory: 535 listings, P10=49.99, Med=59.99
+
+  # ── Layout: a4_b  (6x4 main + 5x3 second photo + name text) ──────────
+  a4_mount_b:
+    button_label: "A4-B (Mount)"
+    layout: a4_b
+    frame: false
+    template_id: a4-b-mount
+    main_size: 6x4
+    needs_secondary: photo
+    orientation_lock: null
+    title_pattern: "{name} Signed A4 Photo Mount Display{team_suffix} Autograph"
+    default_price_gbp: 29.99
+    suggested_prices: [24.99, 29.99, 34.99, 39.99, 49.99]
+    size_clause: "an A4 Mount Display with two photos. The overall size of the piece is A4 (297mm x 210mm / 11.7in x 8.3in)."
+
+  a4_frame_b:
+    button_label: "A4-B (Framed)"
+    layout: a4_b
+    frame: true
+    template_id: a4-b-frame
+    main_size: 6x4
+    needs_secondary: photo
+    orientation_lock: null
+    title_pattern: "{name} Signed A4 Framed Photo Display{team_suffix} Autograph"
+    default_price_gbp: 49.99
+    suggested_prices: [49.99, 59.99, 74.99, 99.99, 119.99]
+    size_clause: "an A4 Framed Photo Display with two photos. The overall size of the piece is A4 (297mm x 210mm / 11.7in x 8.3in)."
+
+  # ── Layout: 10x8  (6x4 main, auto land/port, NO card, NO text) ───────
+  #
+  # 10x8 is a single product entry regardless of orientation — the
+  # compositor picks between templates/10x8-mount-land and
+  # templates/10x8-mount-port internally based on the scan's aspect
+  # ratio. Nicky never sees the choice.
+  10x8_mount:
+    button_label: "10x8 (Mount)"
+    layout: 10x8
+    frame: false
+    template_id: 10x8-mount   # auto-resolved to -land or -port at list time
+    main_size: 6x4
+    needs_secondary: null
+    orientation_lock: auto
+    title_pattern: "{name} Signed 10x8 Photo Mount Display{team_suffix} Autograph"
+    default_price_gbp: 29.99
+    suggested_prices: [24.99, 29.99, 34.99, 39.99, 49.99]
+    size_clause: "a 10x8 Inch Mount Display. The overall size of the piece is approx 12x10 Inches."
+    # No prior inventory (new product). Floor = a4_mount estimate.
 
   10x8_frame:
-    template_id: 10x8-frame-land    # default landscape; override per listing
-    title_pattern: "{name} Signed 10x8 Framed Photo Display{qualifier_suffix} Autograph Memorabilia +COA"
-    default_price_gbp: 54.99
-    size_clause: "a 10x8 Inch (254mm x 203mm) Framed Photograph Display."
-    # Boilerplate 66 chars → name budget 14
-    # Evidence: Stuart Pearce 10x8 Framed Photo Display (item 257200816663)
+    button_label: "10x8 (Framed)"
+    layout: 10x8
+    frame: true
+    template_id: 10x8-frame   # auto-resolved to -land or -port at list time
+    main_size: 6x4
+    needs_secondary: null
+    orientation_lock: auto
+    title_pattern: "{name} Signed 10x8 Framed Photo Display{team_suffix} Autograph"
+    default_price_gbp: 49.99
+    suggested_prices: [49.99, 54.99, 64.99, 79.99, 99.99]
+    size_clause: "a 10x8 Inch Framed Photograph Display."
+    # Inventory: 373 listings, P10=49.99, Med=49.99
 
-  16x12_frame:
+  # ── Layout: 16x12_a  (10x8 main + signed card + name text) ───────────
+  16x12_mount_a:
+    button_label: "16x12-A (Mount)"
+    layout: 16x12_a
+    frame: false
+    template_id: 16x12-a-mount
+    main_size: 10x8
+    needs_secondary: card
+    orientation_lock: null
+    title_pattern: "{name} Signed 16x12 Photo Mount Display{team_suffix} Autograph"
+    default_price_gbp: 49.99
+    suggested_prices: [44.99, 49.99, 54.99, 64.99, 79.99]
+    size_clause: "a Genuine Hand Signed Large 16x12 Inch Photograph Display. The overall size of the piece is 16x12 Inches (40x30cm)."
+    # Inventory: 309 listings, P10=49.99, Med=49.99
+
+  16x12_frame_a:
+    button_label: "16x12-A (Framed)"
+    layout: 16x12_a
+    frame: true
     template_id: 16x12-a-frame
-    title_pattern: "{name} Signed 16x12 Framed Photo Display{qualifier_suffix} Autograph Memorabilia +COA"
-    default_price_gbp: 149.99
+    main_size: 10x8
+    needs_secondary: card
+    orientation_lock: null
+    title_pattern: "{name} Signed 16x12 Framed Photo Display{team_suffix} Autograph"
+    default_price_gbp: 99.99
+    suggested_prices: [89.99, 99.99, 119.99, 139.99, 149.99]
     size_clause: "a 16x12 Inch (40.6cm x 30.5cm / 406mm x 305mm) Framed Photograph Display."
-    # Boilerplate 67 chars → name budget 13
-    # Evidence: Steve Bruce & Bryan Robson 16x12 Framed Photo (item 257301959210)
+    # Inventory: 321 listings, P10=99.99, Med=119.99
 
-# ── Orientation / variant resolution hints ─────────────────────────────
+  # ── Layout: 16x12_b  (10x8 main + 6x4 portrait 2nd photo + text) ─────
+  16x12_mount_b:
+    button_label: "16x12-B (Mount)"
+    layout: 16x12_b
+    frame: false
+    template_id: 16x12-b-mount
+    main_size: 10x8
+    needs_secondary: photo
+    orientation_lock: null
+    title_pattern: "{name} Signed 16x12 Photo Mount Display{team_suffix} Autograph"
+    default_price_gbp: 49.99
+    suggested_prices: [44.99, 49.99, 54.99, 64.99, 79.99]
+    size_clause: "a 16x12 Inch Mount Display with two photos. The overall size of the piece is 16x12 Inches (40x30cm)."
+
+  16x12_frame_b:
+    button_label: "16x12-B (Framed)"
+    layout: 16x12_b
+    frame: true
+    template_id: 16x12-b-frame
+    main_size: 10x8
+    needs_secondary: photo
+    orientation_lock: null
+    title_pattern: "{name} Signed 16x12 Framed Photo Display{team_suffix} Autograph"
+    default_price_gbp: 99.99
+    suggested_prices: [89.99, 99.99, 119.99, 139.99, 149.99]
+    size_clause: "a 16x12 Inch Framed Photograph Display with two photos."
+
+  # ── Layout: 16x12_c  (12x8 landscape main + text, no secondary) ──────
+  16x12_mount_c:
+    button_label: "16x12-C (Mount)"
+    layout: 16x12_c
+    frame: false
+    template_id: 16x12-c-mount
+    main_size: 12x8
+    needs_secondary: null
+    orientation_lock: landscape
+    title_pattern: "{name} Signed 16x12 Photo Mount Display{team_suffix} Autograph"
+    default_price_gbp: 49.99
+    suggested_prices: [44.99, 49.99, 54.99, 64.99, 79.99]
+    size_clause: "a 16x12 Inch Mount Display featuring a 12x8 Inch landscape photograph. The overall size of the piece is 16x12 Inches (40x30cm)."
+
+  16x12_frame_c:
+    button_label: "16x12-C (Framed)"
+    layout: 16x12_c
+    frame: true
+    template_id: 16x12-c-frame
+    main_size: 12x8
+    needs_secondary: null
+    orientation_lock: landscape
+    title_pattern: "{name} Signed 16x12 Framed Photo Display{team_suffix} Autograph"
+    default_price_gbp: 99.99
+    suggested_prices: [89.99, 99.99, 119.99, 139.99, 149.99]
+    size_clause: "a 16x12 Inch Framed Photograph Display featuring a 12x8 Inch landscape photograph."
+
+  # ── Layout: 16x12_d  (12x8 portrait main + text, no secondary) ───────
+  16x12_mount_d:
+    button_label: "16x12-D (Mount)"
+    layout: 16x12_d
+    frame: false
+    template_id: 16x12-d-mount
+    main_size: 12x8
+    needs_secondary: null
+    orientation_lock: portrait
+    title_pattern: "{name} Signed 16x12 Photo Mount Display{team_suffix} Autograph"
+    default_price_gbp: 49.99
+    suggested_prices: [44.99, 49.99, 54.99, 64.99, 79.99]
+    size_clause: "a 16x12 Inch Mount Display featuring a 12x8 Inch portrait photograph. The overall size of the piece is 16x12 Inches (40x30cm)."
+
+  16x12_frame_d:
+    button_label: "16x12-D (Framed)"
+    layout: 16x12_d
+    frame: true
+    template_id: 16x12-d-frame
+    main_size: 12x8
+    needs_secondary: null
+    orientation_lock: portrait
+    title_pattern: "{name} Signed 16x12 Framed Photo Display{team_suffix} Autograph"
+    default_price_gbp: 99.99
+    suggested_prices: [89.99, 99.99, 119.99, 139.99, 149.99]
+    size_clause: "a 16x12 Inch Framed Photograph Display featuring a 12x8 Inch portrait photograph."
+
+  # ── Layout: 16x12_e  (10x8 landscape main + text, no secondary) ──────
+  16x12_mount_e:
+    button_label: "16x12-E (Mount)"
+    layout: 16x12_e
+    frame: false
+    template_id: 16x12-e-mount
+    main_size: 10x8
+    needs_secondary: null
+    orientation_lock: landscape
+    title_pattern: "{name} Signed 16x12 Photo Mount Display{team_suffix} Autograph"
+    default_price_gbp: 49.99
+    suggested_prices: [44.99, 49.99, 54.99, 64.99, 79.99]
+    size_clause: "a 16x12 Inch Mount Display featuring a 10x8 Inch landscape photograph. The overall size of the piece is 16x12 Inches (40x30cm)."
+
+  16x12_frame_e:
+    button_label: "16x12-E (Framed)"
+    layout: 16x12_e
+    frame: true
+    template_id: 16x12-e-frame
+    main_size: 10x8
+    needs_secondary: null
+    orientation_lock: landscape
+    title_pattern: "{name} Signed 16x12 Framed Photo Display{team_suffix} Autograph"
+    default_price_gbp: 99.99
+    suggested_prices: [89.99, 99.99, 119.99, 139.99, 149.99]
+    size_clause: "a 16x12 Inch Framed Photograph Display featuring a 10x8 Inch landscape photograph."
+
+  # ── Layout: 16x12_f  (10x8 portrait main + text, no secondary) ───────
+  16x12_mount_f:
+    button_label: "16x12-F (Mount)"
+    layout: 16x12_f
+    frame: false
+    template_id: 16x12-f-mount
+    main_size: 10x8
+    needs_secondary: null
+    orientation_lock: portrait
+    title_pattern: "{name} Signed 16x12 Photo Mount Display{team_suffix} Autograph"
+    default_price_gbp: 49.99
+    suggested_prices: [44.99, 49.99, 54.99, 64.99, 79.99]
+    size_clause: "a 16x12 Inch Mount Display featuring a 10x8 Inch portrait photograph. The overall size of the piece is 16x12 Inches (40x30cm)."
+
+  16x12_frame_f:
+    button_label: "16x12-F (Framed)"
+    layout: 16x12_f
+    frame: true
+    template_id: 16x12-f-frame
+    main_size: 10x8
+    needs_secondary: null
+    orientation_lock: portrait
+    title_pattern: "{name} Signed 16x12 Framed Photo Display{team_suffix} Autograph"
+    default_price_gbp: 99.99
+    suggested_prices: [89.99, 99.99, 119.99, 139.99, 149.99]
+    size_clause: "a 16x12 Inch Framed Photograph Display featuring a 10x8 Inch portrait photograph."
+
+  # ═════════════════════════════════════════════════════════════════════
+  # PHOTO-ONLY — 4 fixed tiles (no mount/frame toggle)
+  #
+  # These skip Pillow compositing entirely. The scan IS the listing
+  # image. No text overlay, no background, no card. Title / item
+  # specifics / BestOffer still apply to the eBay listing.
+  # ═════════════════════════════════════════════════════════════════════
+
+  photo_6x4:
+    button_label: "6x4 Photo"
+    layout: photo_6x4
+    frame: false
+    template_id: null
+    main_size: 6x4
+    needs_secondary: null
+    orientation_lock: null
+    title_pattern: "{name} Hand Signed 6x4 Photo{team_suffix} Autograph"
+    default_price_gbp: 12.99
+    suggested_prices: [9.99, 12.99, 14.99, 17.99, 19.99]
+    size_clause: "a Signed 6x4 Inch Photograph."
+    # Inventory: 3,012 listings, P10=12.99, Med=12.99
+
+  photo_10x8:
+    button_label: "10x8 Photo"
+    layout: photo_10x8
+    frame: false
+    template_id: null
+    main_size: 10x8
+    needs_secondary: null
+    orientation_lock: null
+    title_pattern: "{name} Signed 10x8 Photo Display{team_suffix} Autograph"
+    default_price_gbp: 19.99
+    suggested_prices: [17.99, 19.99, 24.99, 29.99, 34.99]
+    size_clause: "a Signed 10x8 Inch (254mm x 203mm) Photograph."
+    # Inventory: 3,177 listings, P10=19.99, Med=29.99
+
+  photo_12x8:
+    button_label: "12x8 Photo"
+    layout: photo_12x8
+    frame: false
+    template_id: null
+    main_size: 12x8
+    needs_secondary: null
+    orientation_lock: null
+    title_pattern: "{name} Signed 12x8 Photo Display{team_suffix} Autograph"
+    default_price_gbp: 19.99
+    suggested_prices: [17.99, 19.99, 24.99, 29.99, 34.99]
+    size_clause: "a Signed 12x8 Inch (30cm x 20cm) Photograph."
+    # Inventory: 812 listings, P10=19.99, Med=19.99
+
+  card_only:
+    button_label: "Signed Card"
+    layout: card_only
+    frame: false
+    template_id: null
+    main_size: card
+    needs_secondary: null
+    orientation_lock: null
+    title_pattern: "{name} Hand Signed Card{team_suffix} Autograph"
+    default_price_gbp: 6.99
+    suggested_prices: [5.99, 6.99, 7.99, 9.99, 12.99]
+    size_clause: "a Genuine Hand Signed Card."
+
+# ═════════════════════════════════════════════════════════════════════
+# ORIENTATION → TEMPLATE LOOKUP
 #
-# Several product types have multiple physical templates (10x8 Land vs
-# Port, 16x12 A-F). The picker logic for choosing which specific
-# template to use — based on input photo aspect ratio or a manual
-# override — lives in pipeline/presets.py, not here.
+# Only the 10x8 mount/frame use this. 16x12 has explicit C/D/E/F
+# product keys for each orientation, and 10x8 is a single product key
+# whose template_id gets suffixed with -land or -port at list time
+# based on the scan's aspect ratio.
+# ═════════════════════════════════════════════════════════════════════
 variants:
   10x8_mount:
     landscape: 10x8-mount-land
@@ -145,22 +395,43 @@ variants:
   10x8_frame:
     landscape: 10x8-frame-land
     portrait:  10x8-frame-port
-  16x12_mount:
-    # No automatic aspect-based pick — the A-F variants are design
-    # variations, not orientation. Default to A unless overridden.
-    default:  16x12-a-mount
-    variants: [16x12-a-mount, 16x12-b-mount, 16x12-c-mount,
-               16x12-d-mount, 16x12-e-mount, 16x12-f-mount]
-  16x12_frame:
-    default:  16x12-a-frame
-    variants: [16x12-a-frame, 16x12-b-frame, 16x12-c-frame,
-               16x12-d-frame, 16x12-e-frame, 16x12-f-frame]
 
-# ── Category ID notes ──────────────────────────────────────────────────
+# ═════════════════════════════════════════════════════════════════════
+# DASHBOARD DISPLAY ORDER
 #
-# Categories depend on the SUBJECT (football/music/film/TV), NOT the
-# product type, so we don't bake a category per product here. Instead
-# pipeline/presets.py exposes get_category(sport) using this lookup:
+# Tile order in the product grid. The dashboard shows mount/frame twins
+# as a single tile with a toggle — only one product per layout is
+# visible at a time. Photo-only tiles are always shown.
+# ═════════════════════════════════════════════════════════════════════
+dashboard_order:
+  # Grouped by product family. Each group has a label shown as a
+  # section header in the dashboard, and a list of layout keys.
+  - label: "Other Products"
+    layouts:
+      - photo_6x4
+      - photo_10x8
+      - photo_12x8
+      - card_only
+  - label: "10x8 / A4"
+    layouts:
+      - a4_a
+      - a4_b
+      - 10x8
+  - label: "16x12"
+    layouts:
+      - 16x12_a
+      - 16x12_b
+      - 16x12_c
+      - 16x12_d
+      - 16x12_e
+      - 16x12_f
+
+# ═════════════════════════════════════════════════════════════════════
+# Category ID lookup by subject (Football / Music / Film etc).
+# Category depends on the SUBJECT, not the product type, so it lives
+# outside the per-product entries and gets resolved at list time via
+# pipeline/presets.py:get_category_id(subject).
+# ═════════════════════════════════════════════════════════════════════
 categories_by_subject:
   football_premier:   27290   # Sports > Football > Autographs > Signed Photos > Premiership Players
   football_retired:   97085   # Sports > Football > Autographs > Signed Photos > Retired Players

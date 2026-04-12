@@ -48,7 +48,7 @@ def _simple_listing(**overrides):
     bundle = presets.load(PRESETS_DIR)
     return presets.build_listing(
         bundle,
-        product_key="16x12_mount",
+        product_key="16x12_mount_a",
         name="Alan Hansen",
         subject="football_retired",
         item_specifics={"Player": "Alan Hansen", "Team": "Liverpool"},
@@ -77,7 +77,7 @@ def test_build_add_item_xml_required_fields_present():
 
     assert item.findtext("e:Title", namespaces=NS_MAP).startswith("Alan Hansen")
     assert item.findtext("e:PrimaryCategory/e:CategoryID", namespaces=NS_MAP) == "97085"
-    assert item.findtext("e:StartPrice", namespaces=NS_MAP) == "54.99"
+    assert item.findtext("e:StartPrice", namespaces=NS_MAP) == "49.99"
     assert item.findtext("e:ConditionID", namespaces=NS_MAP) == "1000"
     assert item.findtext("e:Country", namespaces=NS_MAP) == "GB"
     assert item.findtext("e:Currency", namespaces=NS_MAP) == "GBP"
@@ -166,6 +166,52 @@ def test_sku_omitted_when_not_set():
     assert listing.get("sku") is None
     inner = lister.build_add_item_xml(listing, ["https://x/1.jpg"])
     assert "<SKU>" not in inner
+
+
+# --------------------------------------------------------------------------- #
+# Best Offer details
+# --------------------------------------------------------------------------- #
+
+def test_best_offer_block_rendered_for_enabled_listing():
+    """
+    A listing built from presets with a .99 price above £15.99 carries
+    a best_offer dict. build_add_item_xml must emit BestOfferDetails +
+    ListingDetails with the auto-accept / minimum thresholds.
+    """
+    # 16x12_mount_a defaults to £54.99 → BO enabled, thresholds from curve
+    listing = _simple_listing()
+    assert listing["best_offer"] is not None  # sanity
+
+    inner = lister.build_add_item_xml(listing, ["https://x/1.jpg"])
+    item = _wrap(inner).find("e:Item", NS_MAP)
+
+    bo = item.find("e:BestOfferDetails", NS_MAP)
+    assert bo is not None
+    assert bo.findtext("e:BestOfferEnabled", namespaces=NS_MAP) == "true"
+
+    ld = item.find("e:ListingDetails", NS_MAP)
+    assert ld is not None
+    accept_el = ld.find("e:BestOfferAutoAcceptPrice", NS_MAP)
+    min_el = ld.find("e:MinimumBestOfferPrice", NS_MAP)
+    assert accept_el is not None and min_el is not None
+    assert accept_el.attrib["currencyID"] == "GBP"
+    assert min_el.attrib["currencyID"] == "GBP"
+    # Values come from the attached best_offer dict.
+    assert float(accept_el.text) == pytest.approx(listing["best_offer"]["auto_accept"])
+    assert float(min_el.text)    == pytest.approx(listing["best_offer"]["min_offer"])
+
+
+def test_best_offer_block_omitted_when_none():
+    """
+    A listing with best_offer=None (e.g. sub-£14.99 card) must NOT emit
+    a BestOfferDetails block — eBay's default for fixed-price items is
+    BO disabled, so silence is correct.
+    """
+    listing = _simple_listing()
+    listing["best_offer"] = None
+    inner = lister.build_add_item_xml(listing, ["https://x/1.jpg"])
+    assert "<BestOfferDetails>" not in inner
+    assert "<BestOfferAutoAcceptPrice" not in inner
 
 
 # --------------------------------------------------------------------------- #

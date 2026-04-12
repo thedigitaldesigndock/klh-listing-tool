@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>KLH Listing Dashboard</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand">
+      <h1>KLH Listing Dashboard</h1>
+      <span class="subtitle">Kim &amp; Nicky · internal tool</span>
+    </div>
+    <div class="header-controls">
+      <div id="config-banner" class="config-banner hidden"></div>
+    </div>
+  </header>
+
+  <main class="app-main">
+    <section id="catalog">
+      <div class="catalog-heading">
+        <h2>1 · Pick a product</h2>
+        <div class="segment-control" id="frame-segment">
+          <button class="segment active" data-value="mount">Mount</button>
+          <button class="segment" data-value="frame">Frame</button>
+        </div>
+      </div>
+      <div id="product-grid" class="product-grid">
+        <!-- Tiles injected by app.js -->
+        <div class="loading">Loading catalog…</div>
+      </div>
+    </section>
+
+    <section id="workflow" class="workflow hidden">
+      <div class="workflow-title-row">
+        <h2 id="workflow-heading">2 · Scan &amp; list</h2>
+        <div class="workflow-title-controls">
+          <label class="toggle toggle-mode">
+            <input type="checkbox" id="mockup-only-toggle" />
+            <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            <span class="toggle-label">
+              <span data-off>Full listing</span>
+              <span data-on>Mockup only</span>
+            </span>
+          </label>
+          <button id="back-btn" class="btn btn-ghost hidden">&larr; Back to products</button>
+        </div>
+      </div>
+
+      <div class="workflow-header">
+        <div class="workflow-summary">
+          <span class="muted">Selected:</span>
+          <strong id="workflow-product-label">—</strong>
+          <span class="chip" id="workflow-product-key">—</span>
+          <span class="muted listing-only">default</span>
+          <strong id="workflow-default-price" class="listing-only">—</strong>
+        </div>
+        <div class="workflow-actions">
+          <button id="scan-btn" class="btn btn-primary">Scan ONE / TWO</button>
+          <button id="render-all-btn" class="btn" disabled>Render all mockups</button>
+          <button id="download-all-btn" class="btn mockup-only-el" disabled>Download all</button>
+          <button id="list-all-btn" class="btn btn-danger listing-only" disabled>List all live</button>
+        </div>
+      </div>
+
+      <div id="scan-status" class="scan-status muted">Not scanned yet.</div>
+
+      <div class="workflow-grid">
+        <table id="rows-table" class="rows-table hidden">
+          <thead>
+            <tr>
+              <th class="col-thumb">Mockup</th>
+              <th class="col-pair">Listing</th>
+              <th class="col-price">
+                <div class="price-header">
+                  <span class="price-header-label">Price (£)</span>
+                  <div class="bulk-reprice">
+                    <input type="number" id="bulk-price-input" min="0" step="1" placeholder="29.99" />
+                    <button type="button" id="bulk-price-apply">Apply to all</button>
+                    <div id="bulk-price-chips" class="price-suggestions bulk-price-chips"></div>
+                  </div>
+                </div>
+              </th>
+              <th class="col-status">Status</th>
+              <th class="col-actions">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="rows-body">
+            <!-- Rows injected by app.js -->
+          </tbody>
+        </table>
+
+        <details id="unmatched-details" class="unmatched hidden">
+          <summary>Unmatched / needs attention</summary>
+          <div id="unmatched-body"></div>
+        </details>
+      </div>
+    </section>
+  </main>
+
+  <footer class="app-footer">
+    <span id="product-count">—</span> ·
+    <span id="tile-count">—</span> tiles
+  </footer>
+
+  <div id="lightbox" class="lightbox hidden" role="dialog" aria-label="Mockup preview">
+    <button id="lightbox-close" class="lightbox-close" aria-label="Close preview">&times;</button>
+    <img id="lightbox-img" src="" alt="mockup preview" />
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

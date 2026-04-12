@@ -26,9 +26,9 @@ text:
   content: Personally Signed By
   bbox:
   - 2012
-  - 1877
+  - 1863
   - 3266
-  - 1934
+  - 1923
   font: Cambria
   size: 57
   align: center
@@ -37,9 +37,9 @@ text:
   content: '{name}'
   bbox:
   - 2100
-  - 1939
+  - 1917
   - 3170
-  - 2056
+  - 2042
   font: Cambria
   size_range:
   - 60

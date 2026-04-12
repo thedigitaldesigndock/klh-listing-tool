@@ -16,6 +16,7 @@
     4021,
     2207
   ],
+  "secondary_bbox": null,
   "text_container": {
     "name": "TEXT BOX",
     "kind": "shape",

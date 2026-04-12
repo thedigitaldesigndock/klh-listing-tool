@@ -11,8 +11,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-psd = ["psd-tools>=1.10"]
-dev = ["pytest>=7.0"]
+psd       = ["psd-tools>=1.10"]
+dashboard = ["fastapi>=0.110", "uvicorn[standard]>=0.27"]
+dev       = ["pytest>=7.0", "fastapi>=0.110", "uvicorn[standard]>=0.27", "httpx>=0.27"]
 
 [project.scripts]
 klh = "cli.klh:main"
@@ -22,5 +23,8 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-include = ["ebay_api*", "pipeline*", "cli*"]
+include = ["ebay_api*", "pipeline*", "cli*", "dashboard*", "twofifteen*"]
 exclude = ["tests*"]
+
+[tool.setuptools.package-data]
+dashboard = ["static/*"]

@@ -1,0 +1,26 @@
+# KLH Listing Tool per-machine config.
+#
+# This file lives at %USERPROFILE%\.klh\config.yaml on Windows
+# (i.e. C:\Users\<you>\.klh\config.yaml).
+#
+# Paths are platform-specific — on Windows we point at C:\KLH\data\
+# for local work and the mapped Google Drive letter for the shared
+# scan inbox. Adjust the Drive letter below if GD mounts elsewhere.
+
+paths:
+  # Shared inbox — Nicky drops scans here on his PC, Kim lists from hers.
+  # Flat folder, no date subdirs. Nicky clears it between batches.
+  picture_dir:     "G:/My Drive/KLH/inbound"
+
+  # Odd-size cards (white-card, oversize) scan dir. Same GD inbox for now
+  # since Nicky keeps a flat workflow — change later if he splits them out.
+  card_dir:        "G:/My Drive/KLH/inbound"
+
+  # Local working dirs — auto-created by setup.bat.
+  products_dir:    "C:/KLH/klh-listing-tool/presets"
+  normalized_dir:  "C:/KLH/data/normalized"
+  mockups_dir:     "C:/KLH/data/mockups"
+  listed_dir:      "C:/KLH/data/listed"
+
+env_file:    "~/.klh/.env"
+tokens_file: "~/.klh/tokens.json"

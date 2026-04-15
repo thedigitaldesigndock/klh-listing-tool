@@ -800,6 +800,49 @@ body:not(.mockup-mode) .mockup-only-el { display: none !important; }
   font-weight: 600;
 }
 
+/* Qty cell mirrors the price cell styling — small input on the left,
+   chip row on the right. Kim holds multiple copies of popular items;
+   the chips bump quantity without typing. */
+.qty-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.qty-input {
+  width: 48px;
+  font-family: inherit;
+  font-size: 13px;
+  padding: 3px 5px;
+  text-align: center;
+}
+.qty-suggestions {
+  display: flex;
+  gap: 4px;
+}
+.qty-chip {
+  font-family: inherit;
+  font-size: 12px;
+  padding: 3px 8px;
+  border-radius: 12px;
+  background: #f0f0f3;
+  border: 1px solid transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+  min-width: 22px;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+.qty-chip:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.qty-chip.active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+  font-weight: 600;
+}
+
 /* Keep display: flex on an INNER wrapper, not on the td itself — a
    flex <td> drops out of table layout and makes every row grow to the
    height of the tallest sibling cell. */

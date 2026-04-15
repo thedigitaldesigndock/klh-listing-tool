@@ -371,6 +371,7 @@
       mockup_path:  null,
       is_raw_photo: false,
       price:        m.picture?.price ?? floorPrice,
+      quantity:     1,        // duplicates Kim has in stock; chips bump to 2/3/4/5
       title:        "",       // filled in by /api/preview
       title_dirty:  false,    // true once the user edits the title
       status:       "idle",
@@ -578,6 +579,48 @@
 
     tr.appendChild(tdPrice);
 
+    // --- Qty cell ----------------------------------------------------- //
+    // Kim often holds multiple duplicates of the same signed item. The
+    // default is 1; chips let her bump to 2/3/4/5 without typing.
+    const tdQty = document.createElement("td");
+    tdQty.className = "col-qty";
+
+    const qtyCell = document.createElement("div");
+    qtyCell.className = "qty-cell";
+
+    const qtyInput = document.createElement("input");
+    qtyInput.type  = "number";
+    qtyInput.min   = "1";
+    qtyInput.step  = "1";
+    qtyInput.value = row.quantity;
+    qtyInput.className = "qty-input";
+    qtyInput.addEventListener("input", (e) => {
+      const v = parseInt(e.target.value, 10);
+      row.quantity = (isFinite(v) && v >= 1) ? v : 1;
+      updateQtyChipHighlights(qtyChips, row.quantity);
+    });
+    qtyCell.appendChild(qtyInput);
+
+    const qtyChips = document.createElement("div");
+    qtyChips.className = "qty-suggestions";
+    for (const q of [2, 3, 4, 5]) {
+      const chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = "qty-chip";
+      chip.dataset.qty = String(q);
+      if (q === row.quantity) chip.classList.add("active");
+      chip.textContent = String(q);
+      chip.addEventListener("click", () => {
+        row.quantity = q;
+        qtyInput.value = q;
+        updateQtyChipHighlights(qtyChips, q);
+      });
+      qtyChips.appendChild(chip);
+    }
+    qtyCell.appendChild(qtyChips);
+    tdQty.appendChild(qtyCell);
+    tr.appendChild(tdQty);
+
     // --- Status cell -------------------------------------------------- //
     const tdStatus = document.createElement("td");
     tdStatus.className = `col-status status-${row.status}`;
@@ -663,6 +706,12 @@
     });
   }
 
+  function updateQtyChipHighlights(wrap, qty) {
+    wrap.querySelectorAll(".qty-chip").forEach(c => {
+      c.classList.toggle("active", parseInt(c.dataset.qty, 10) === qty);
+    });
+  }
+
   function statusLabel(row) {
     if (row.message) return row.message;
     switch (row.status) {
@@ -707,6 +756,7 @@
       product_key:    state.selectedProduct.product_key,
       pair_key:       row.pair_key,
       price_gbp:      row.price,
+      quantity:       row.quantity || 1,
       title_override: row.title_dirty ? row.title : null,
       ...overrides,
     };

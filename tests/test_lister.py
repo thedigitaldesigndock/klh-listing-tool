@@ -201,6 +201,25 @@ def test_sku_rendered_when_set():
     assert item.findtext("e:SKU", namespaces=NS_MAP) == "KLH-AH-16X12-001"
 
 
+def test_quantity_override_rendered():
+    """
+    build_listing(quantity=N) must override defaults.yaml's quantity:1
+    and surface in the XML — Kim uses this when she has multiples of
+    the same signed item ready to ship (e.g. 3 duplicate photos).
+    """
+    listing = _simple_listing(quantity=3)
+    inner = lister.build_add_item_xml(listing, ["https://x/1.jpg"])
+    item = _wrap(inner).find("e:Item", NS_MAP)
+    assert item.findtext("e:Quantity", namespaces=NS_MAP) == "3"
+
+
+def test_quantity_defaults_to_one_when_not_specified():
+    listing = _simple_listing()
+    inner = lister.build_add_item_xml(listing, ["https://x/1.jpg"])
+    item = _wrap(inner).find("e:Item", NS_MAP)
+    assert item.findtext("e:Quantity", namespaces=NS_MAP) == "1"
+
+
 def test_sku_omitted_when_not_set():
     listing = _simple_listing()
     assert listing.get("sku") is None

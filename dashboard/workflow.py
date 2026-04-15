@@ -303,6 +303,7 @@ class ListRequest(BaseModel):
     product_key: str
     pair_key: str
     price_gbp: float
+    quantity: int = 1                          # duplicates Kim holds of this item
     mockup_filename: Optional[str] = None      # defaults to _mockup_filename()
     orientation: Optional[str] = None
     variant: Optional[str] = None
@@ -338,6 +339,10 @@ def _build_listing_for_request(bundle, req, *, title_override=None):
         orientation=req.orientation,
         variant=req.variant,
         price_gbp=req.price_gbp,
+        # /api/preview's PreviewRequest doesn't carry quantity — it affects
+        # the XML Quantity field, not the title/price/best-offer rendering
+        # that the preview panel displays — so default to 1 when missing.
+        quantity=getattr(req, "quantity", None),
         item_specifics=req.item_specifics,
         overrides=overrides,
     )

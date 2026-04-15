@@ -614,6 +614,7 @@ def build_listing(
     photo_size: Optional[str] = None,
     variant: Optional[str] = None,
     price_gbp: Optional[float] = None,
+    quantity: Optional[int] = None,
     sku: Optional[str] = None,
     item_specifics: Optional[dict[str, str]] = None,
     overrides: Optional[dict] = None,
@@ -739,6 +740,11 @@ def build_listing(
     except (TypeError, ValueError):
         vat_percent = None
 
+    listing_cfg = copy.deepcopy(bundle.defaults.get("listing", {}))
+    if quantity is not None:
+        # Per-listing override beats the defaults.yaml quantity.
+        listing_cfg["quantity"] = int(quantity)
+
     listing: dict = {
         "product_key": product_key,
         "template_id": template_id,
@@ -750,7 +756,7 @@ def build_listing(
         "store_category_id": store_category_id,
         "vat_percent": vat_percent,
         "marketplace":      copy.deepcopy(bundle.defaults.get("marketplace", {})),
-        "listing":          copy.deepcopy(bundle.defaults.get("listing", {})),
+        "listing":          listing_cfg,
         "seller_profiles":  copy.deepcopy(bundle.defaults.get("seller_profiles", {})),
         # shipping + return_policy kept for documentation only; the lister
         # uses seller_profiles when the account is on Business Policies.

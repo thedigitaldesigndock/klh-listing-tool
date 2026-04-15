@@ -90,19 +90,22 @@ def create_app() -> FastAPI:
         return JSONResponse(build_catalog(bundle))
 
     @app.get("/api/template-preview/{template_id}")
-    def api_template_preview(template_id: str) -> FileResponse:
+    def api_template_preview(template_id: str, variant: str = "") -> FileResponse:
         """
-        Serve <repo_root>/templates/<template_id>/preview.jpg.
+        Serve <repo_root>/templates/<template_id>/preview.jpg (or
+        preview_cdef.jpg when ?variant=cdef is passed).
 
-        Locked down to the single allowed filename so this route can't
-        be abused to read spec.yaml, source.json, or walk out of the
-        templates tree. Template IDs come from products.yaml and are
-        slugs like "16x12-c-mount" — we reject anything with a slash
-        or a leading dot as a belt-and-braces check.
+        Locked down to allowed filenames so this route can't be abused
+        to read spec.yaml, source.json, or walk out of the templates
+        tree. Template IDs come from products.yaml and are slugs like
+        "16x12-c-mount" — we reject anything with a slash or a leading
+        dot as a belt-and-braces check.
         """
         if "/" in template_id or "\\" in template_id or template_id.startswith("."):
             raise HTTPException(status_code=400, detail="invalid template id")
-        preview_path = TEMPLATES_DIR / template_id / _ALLOWED_PREVIEW_NAME
+        # Choose the filename based on the variant query param.
+        filename = "preview_cdef.jpg" if variant == "cdef" else _ALLOWED_PREVIEW_NAME
+        preview_path = TEMPLATES_DIR / template_id / filename
         # Resolve and confirm it's still inside TEMPLATES_DIR.
         try:
             resolved = preview_path.resolve(strict=True)

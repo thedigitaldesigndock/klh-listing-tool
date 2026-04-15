@@ -52,11 +52,16 @@ def _preview_url_for(template_id: Optional[str], product_key: str = "") -> Optio
     None if no preview is available.
 
     Resolution order:
-      1. templates/<template_id>/preview.jpg   (direct hit)
-      2. templates/<template_id>-land/preview.jpg  (orientation fallback)
-      3. static/placeholders/<product_key>.png  (photo/card placeholder)
+      1. templates/<template_id>/preview_cdef.jpg  (CDEF composite)
+      2. templates/<template_id>/preview.jpg       (direct hit)
+      3. templates/<template_id>-land/preview.jpg  (orientation fallback)
+      4. static/placeholders/<product_key>.png     (photo/card placeholder)
     """
     if template_id:
+        # CDEF composite — the merged tile has a 2×2 grid preview.
+        if (_TEMPLATES_DIR / template_id / "preview_cdef.jpg").exists():
+            return f"/api/template-preview/{template_id}?variant=cdef"
+
         # Direct hit — preferred.
         if (_TEMPLATES_DIR / template_id / "preview.jpg").exists():
             return f"/api/template-preview/{template_id}"

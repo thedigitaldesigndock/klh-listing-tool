@@ -35,6 +35,12 @@ listing:
   best_offer_enabled: false
   private_listing: false
 
+# VAT rate (percent) applied to every listing via <VATDetails><VATPercent>.
+# Kim is VAT-registered; the existing live listings all carry 20%. If
+# HMRC changes the rate or Kim deregisters, flip the number (or remove
+# the whole key to stop emitting VATDetails).
+vat_percent: 20.0
+
 # Free 2nd class with a paid next-day upgrade — lifted verbatim from the
 # shipping service options on active listings.
 shipping:
@@ -86,9 +92,11 @@ return_policy:
 #      for buyers browsing the item page.
 #
 #      "COA Included" answers the #1 question Kim gets asked.
-#      "Other Styles" answers #2: "do you do it framed / in 16x12?"
-#      — a cross-sell to Kim's full format range without claiming the
-#      current item IS any one of those.
+#      "More In Our Shop" is a cross-sell to Kim's full format range
+#      without claiming the current item IS any of those formats.
+#      "Also Known As" catches less-obvious search terms (merch,
+#      print, poster, auto) that buyers type but we can't fit in
+#      the title.
 #
 # Char limits enforced by eBay: name ≤ 40 chars, value ≤ 65 chars.
 # A test (test_defaults_specifics_within_ebay_char_limits) locks this in.
@@ -100,10 +108,11 @@ item_specifics:
 
   # Custom Q&A specifics — generic only, NO product leak
   "Authenticity":          "100% Genuine Hand Signed Autograph Signature Original Authentic"
-  "COA Included":          "Free Certificate of Authenticity COA Cert LOA Letter"
+  "COA Included":          "Includes Certificate of Authenticity COA Cert LOA Letter"
   "Autograph Type":        "Hand Signed In Person Original Autographed Not Copy Pre-Print"
   "Perfect For":           "Gift Present Birthday Christmas Memorabilia Collectible Display"
-  "Other Styles":          "Also Available A4 10x8 12x8 16x12 Mount Frame Photo Card"
+  "More In Our Shop":      "Full Range In Store A4 10x8 12x8 16x12 Mount Frame Photo Card"
+  "Also Known As":         "Merch Merchandise Print Poster Autographed Auto Signature Gift"
 
 # Description template (HTML). The body lives in description_template.html
 # and is loaded alongside this file. The only required placeholder is

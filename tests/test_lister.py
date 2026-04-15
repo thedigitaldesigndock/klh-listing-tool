@@ -154,6 +154,46 @@ def test_unsafe_characters_in_title_are_escaped():
         "Bob & Co <signed> 'photo' \"wow\""
 
 
+def test_storefront_store_category_rendered_when_set():
+    """StoreCategoryID routes listings into Kim's shop bucket."""
+    listing = _simple_listing()  # 16x12_mount_a + football_retired
+    # football_retired subject doesn't map a store category via knowledge
+    # lookup (lookup keys by *category name* not subject), so poke it
+    # directly to simulate the happy-path plumbing.
+    listing["store_category_id"] = 1954551013
+    inner = lister.build_add_item_xml(listing, ["https://x/1.jpg"])
+    item = _wrap(inner).find("e:Item", NS_MAP)
+    sf = item.find("e:Storefront", NS_MAP)
+    assert sf is not None
+    assert sf.findtext("e:StoreCategoryID", namespaces=NS_MAP) == "1954551013"
+
+
+def test_storefront_omitted_when_store_category_none():
+    listing = _simple_listing()
+    listing["store_category_id"] = None
+    inner = lister.build_add_item_xml(listing, ["https://x/1.jpg"])
+    item = _wrap(inner).find("e:Item", NS_MAP)
+    assert item.find("e:Storefront", NS_MAP) is None
+
+
+def test_vat_details_rendered_at_20_percent():
+    """Kim is VAT-registered; every listing carries VATPercent=20.0."""
+    listing = _simple_listing()
+    inner = lister.build_add_item_xml(listing, ["https://x/1.jpg"])
+    item = _wrap(inner).find("e:Item", NS_MAP)
+    vd = item.find("e:VATDetails", NS_MAP)
+    assert vd is not None
+    assert vd.findtext("e:VATPercent", namespaces=NS_MAP) == "20.0"
+
+
+def test_vat_details_omitted_when_vat_percent_none():
+    listing = _simple_listing()
+    listing["vat_percent"] = None
+    inner = lister.build_add_item_xml(listing, ["https://x/1.jpg"])
+    item = _wrap(inner).find("e:Item", NS_MAP)
+    assert item.find("e:VATDetails", NS_MAP) is None
+
+
 def test_sku_rendered_when_set():
     listing = _simple_listing(sku="KLH-AH-16X12-001")
     inner = lister.build_add_item_xml(listing, ["https://x/1.jpg"])

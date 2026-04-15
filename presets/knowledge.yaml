@@ -10,9 +10,19 @@
 #   4. How to expand short club names to their full official form
 #      (Man Utd → Manchester United) so both variants end up in IS.
 #   5. Which klh preset subject/category to route the listing to.
+#   6. Which eBay STORE category the listing goes into (Kim's custom
+#      shop category tree — different from the site-wide category_id).
+#      Fetched live via GetStore on 2026-04-15.
 #
 # Add rows as Nicky/Kim hit new ones. Missing entries fail open — the
 # lister will still list, it just won't expand the alias.
+#
+# NOTE on store category overrides:
+#   - odd_card listings route to "Signed White Cards" (85843959013)
+#     regardless of the category's store_category_id. This is Kim's
+#     convention — all odd-size signed cards live in one shop bucket.
+#   - If no store_category_id is set and no override applies, the
+#     listing lands in the top-level "Other" bucket (id "1").
 
 # ── CATEGORIES ─────────────────────────────────────────────────────────
 # Keyed on the Category field (field 2 of the filename stem).
@@ -32,72 +42,91 @@ categories:
     is_keywords: "Football Soccer FIFA Premier League Champions"
     field1_label: Club
     subject: football_premier
+    store_category_id: 1954551013   # Football Autographs
 
   Rugby:
     in_title: true         # niche, worth the title slot
     is_keywords: "Rugby Union League RFU Six Nations World Cup Premiership"
     field1_label: Club
-    subject: default
+    subject: rugby
+    store_category_id: 1958694013   # Rugby Autographs
 
   Snooker:
     in_title: true
     is_keywords: "Snooker Billiards World Championship Crucible"
     field1_label: Nickname
-    subject: default
+    subject: snooker
+    store_category_id: 2155301013   # Snooker Autographs
 
   Boxing:
     in_title: true
     is_keywords: "Boxing Heavyweight Champion WBA WBC IBF WBO World Title"
     field1_label: Nickname
-    subject: default
+    subject: boxing
+    store_category_id: 1994637013   # Boxing Autographs
 
   Darts:
     in_title: true
     is_keywords: "Darts PDC World Championship Premier League BDO"
     field1_label: Nickname
-    subject: default
+    subject: darts
+    store_category_id: 2063972013   # Darts Autographs
 
   Golf:
     in_title: true
     is_keywords: "Golf PGA Masters Open Championship Ryder Cup"
     field1_label: Tour
-    subject: default
+    subject: golf
+    store_category_id: 1997226013   # Golf Autographs
 
   F1:
     in_title: true
     is_keywords: "F1 Formula 1 Grand Prix Motorsport Racing Driver"
     field1_label: Team
-    subject: default
+    subject: formula_one
+    store_category_id: 1997227013   # Motorsport Autographs
 
   Cricket:
-    in_title: false
+    in_title: true
     is_keywords: "Cricket Test Match Ashes ICC England County"
     field1_label: County
-    subject: default
+    subject: cricket
+    store_category_id: 1958695013   # Cricket Autographs
+
+  Rugby League:
+    in_title: true
+    is_keywords: "Rugby League RFL Super League Challenge Cup"
+    field1_label: Club
+    subject: rugby_league
+    store_category_id: 1958694013   # Rugby Autographs (shared bucket)
 
   Tennis:
     in_title: false
     is_keywords: "Tennis Grand Slam Wimbledon ATP WTA"
     field1_label: Nationality
-    subject: default
+    subject: tennis
+    store_category_id: 11823390013  # Tennis Autographs
 
   NFL:
     in_title: true
     is_keywords: "NFL American Football Super Bowl NFC AFC"
     field1_label: Team
-    subject: default
+    subject: nfl
+    store_category_id: 1                # no NFL bucket yet → Other
 
   NBA:
     in_title: true
     is_keywords: "NBA Basketball Eastern Western Conference"
     field1_label: Team
-    subject: default
+    subject: nba
+    store_category_id: 11892229013  # Basketball Autographs
 
   MMA:
     in_title: true
     is_keywords: "MMA UFC Mixed Martial Arts Octagon Champion"
     field1_label: Weight Class
-    subject: default
+    subject: mma
+    store_category_id: 3644936013   # Wrestling/UFC Autographs
 
   # ── Music ──
   Music:
@@ -105,30 +134,35 @@ categories:
     is_keywords: "Music Pop Rock Band Album Single Song"
     field1_label: Band/Group
     subject: music_pop
+    store_category_id: 1954554013   # Music Autographs
 
   Rock:
     in_title: true
     is_keywords: "Rock Music Album Band Guitarist Drummer Vocalist"
     field1_label: Band
     subject: music_pop
+    store_category_id: 1954554013
 
   Pop:
     in_title: true
     is_keywords: "Pop Music Chart Single Album Singer"
     field1_label: Band
     subject: music_pop
+    store_category_id: 1954554013
 
   Indie:
     in_title: true
     is_keywords: "Indie Music Alternative Band Album"
     field1_label: Band
     subject: music_pop
+    store_category_id: 1954554013
 
   Hip-Hop:
     in_title: true
     is_keywords: "Hip-Hop Rap Music Album Single"
     field1_label: Group
     subject: music_pop
+    store_category_id: 1954554013
 
   # ── Film & TV ──
   TV:
@@ -136,24 +170,28 @@ categories:
     is_keywords: "TV Series Television Show Sitcom Drama"
     field1_label: Show
     subject: film_tv
+    store_category_id: 1954552013   # TV Autographs
 
   Film:
     in_title: true
     is_keywords: "Film Movie Cinema Hollywood Motion Picture"
     field1_label: Film Title
     subject: film_tv
+    store_category_id: 1954553013   # Film Autographs
 
   Comedy:
     in_title: true
     is_keywords: "Comedy Sitcom Comedian Stand Up"
     field1_label: Show
     subject: film_tv
+    store_category_id: 2671101013   # TV > Comedians Autographs
 
   Drama:
     in_title: true
     is_keywords: "Drama Series Show Television"
     field1_label: Show
     subject: film_tv
+    store_category_id: 1954552013   # TV Autographs
 
 # ── CLUBS ──────────────────────────────────────────────────────────────
 # Short form → full official name. The short form goes in the title

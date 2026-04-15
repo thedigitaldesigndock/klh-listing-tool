@@ -52,6 +52,7 @@ from pydantic import BaseModel, Field
 
 from pipeline import config as pcfg
 from pipeline import compositor
+from pipeline import ruler_composite
 from pipeline import lister
 from pipeline import matcher
 from pipeline import presets as pp
@@ -68,6 +69,7 @@ def _safe_path(path: Optional[Path]) -> Optional[str]:
 
 def _image_file_to_dict(f: matcher.ImageFile) -> dict:
     """Convert a matcher.ImageFile to a JSON-safe dict."""
+    parsed = parse_stem(f.pair_key) if f.pair_key else None
     return {
         "path":           str(f.path),
         "name":           f.path.name,
@@ -78,6 +80,15 @@ def _image_file_to_dict(f: matcher.ImageFile) -> dict:
         "is_unknown":     f.is_unknown,
         "pair_key":       f.pair_key,
         "price":          f.price,
+        # Parsed stem components so the frontend can render unmatched
+        # pictures as valid rows for no-secondary products (photo-only
+        # and odd-size card/photo), where TWO/ isn't required.
+        "parsed": {
+            "name":     parsed.name,
+            "field1":   parsed.field1,
+            "category": parsed.category,
+            "variant":  parsed.variant,
+        } if parsed else None,
     }
 
 
@@ -154,6 +165,45 @@ def _find_file_for_pair_key(directory: Path, pair_key: str) -> Optional[Path]:
         if parsed.pair_key == pair_key:
             return p
     return None
+
+
+# --------------------------------------------------------------------------- #
+# Extra listing images
+# --------------------------------------------------------------------------- #
+#
+# Kim's stock photos that get appended to every listing after the main
+# mockup/scan. Stored in <extra_images_dir>/<group>/ on disk, where
+# <group> is the product's `extra_images_group` value from products.yaml.
+# Sorted alphabetically so the order is deterministic (Picture 2 before
+# Picture 3, etc.).
+
+_IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
+
+
+def _get_extra_image_paths(
+    extra_images_dir: Optional[Path],
+    product_key: str,
+    bundle: pp.PresetsBundle,
+) -> list[Path]:
+    """
+    Return sorted paths for the extra listing images that belong to
+    this product, or an empty list if no extras are configured / found.
+    """
+    if not extra_images_dir or not extra_images_dir.exists():
+        return []
+    product = bundle.products.get(product_key)
+    if not product:
+        return []
+    group = product.raw.get("extra_images_group")
+    if not group:
+        return []
+    group_dir = extra_images_dir / group
+    if not group_dir.is_dir():
+        return []
+    return sorted(
+        p for p in group_dir.iterdir()
+        if p.is_file() and p.suffix.lower() in _IMAGE_EXTS
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -377,8 +427,40 @@ def register_workflow_routes(app: FastAPI) -> None:
 
         parsed = parse_stem(req.pair_key)
 
-        # Photo-only products: no compositor work. Return ok with no URL —
-        # the frontend knows to use the raw scan.
+        # Odd-size card / photo: composite onto a Kim Ruler background.
+        # The picker chooses the best-fit ruler from templates/rulers/
+        # based on the scan's detected content size.
+        odd_layouts = {"odd_card", "odd_photo"}
+        if product.raw.get("layout") in odd_layouts:
+            try:
+                img, ruler = ruler_composite.render_odd_size_mockup(picture_path)
+            except Exception as e:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"ruler composite failed: {e}",
+                )
+            out_name = _mockup_filename(req.product_key, req.pair_key)
+            out_path = cfg.paths.mockups_dir / out_name
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            img.save(out_path, "JPEG", quality=90, optimize=True)
+            return JSONResponse({
+                "ok":            True,
+                "product_key":   req.product_key,
+                "template_id":   None,
+                "ruler":         ruler.name,
+                "mockup_url":    f"/api/mockup-image/{out_name}",
+                "mockup_path":   str(out_path),
+                "is_raw_photo":  False,
+                "parsed": {
+                    "name":     parsed.name,
+                    "field1":   parsed.field1,
+                    "category": parsed.category,
+                    "variant":  parsed.variant,
+                },
+            })
+
+        # Photo-only products (6x4, 10x8, 12x8): no compositor work.
+        # Return ok with no URL — the frontend knows to use the raw scan.
         if product.template_id is None:
             return JSONResponse({
                 "ok":            True,
@@ -602,10 +684,18 @@ def register_workflow_routes(app: FastAPI) -> None:
                        f"pair_key={req.pair_key!r}",
             )
 
-        if product.template_id is None:
-            # Photo-only: upload the raw scan, no mockup required.
-            upload_paths: list[Path] = [picture_path]
-        else:
+        # Three upload modes:
+        #   1. Template-based products (mounts, frames) → upload the
+        #      composited mockup PNG.
+        #   2. Odd-size card/photo → upload the ruler-composite mockup
+        #      (template_id is None but we still have a generated file).
+        #   3. Plain photo-only (6x4/10x8/12x8) → upload the raw scan,
+        #      no mockup stage involved.
+        odd_layouts = {"odd_card", "odd_photo"}
+        layout = product.raw.get("layout")
+        needs_mockup = (product.template_id is not None) or (layout in odd_layouts)
+
+        if needs_mockup:
             mockup_name = req.mockup_filename or _mockup_filename(
                 req.product_key, req.pair_key
             )
@@ -618,7 +708,16 @@ def register_workflow_routes(app: FastAPI) -> None:
                         f"Call /api/mockup first."
                     ),
                 )
-            upload_paths = [mockup_path]
+            upload_paths: list[Path] = [mockup_path]
+        else:
+            # Photo-only: upload the raw scan, no mockup required.
+            upload_paths = [picture_path]
+
+        # Append Kim's stock extra images for this product type.
+        extra_paths = _get_extra_image_paths(
+            cfg.paths.extra_images_dir, req.product_key, bundle
+        )
+        upload_paths.extend(extra_paths)
 
         # ---- Safety gates --------------------------------------------- #
         if not req.verify_only and not req.confirm:

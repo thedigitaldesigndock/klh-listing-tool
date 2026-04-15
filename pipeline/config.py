@@ -28,6 +28,7 @@ class Paths:
     normalized_dir: Path
     mockups_dir: Path
     listed_dir: Path
+    extra_images_dir: Optional[Path] = None
     golden_dir: Optional[Path] = None
     drive_inbox: Optional[Path] = None
 
@@ -77,6 +78,7 @@ def load(config_path: Optional[Path] = None) -> Config:
         normalized_dir=_expand(paths_raw["normalized_dir"]),
         mockups_dir=_expand(paths_raw["mockups_dir"]),
         listed_dir=_expand(paths_raw["listed_dir"]),
+        extra_images_dir=_expand(paths_raw.get("extra_images_dir")) if paths_raw.get("extra_images_dir") else None,
         golden_dir=_expand(paths_raw.get("golden_dir")) if paths_raw.get("golden_dir") else None,
         drive_inbox=_expand(paths_raw.get("drive_inbox")) if paths_raw.get("drive_inbox") else None,
     )

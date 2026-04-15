@@ -870,3 +870,18 @@ body:not(.mockup-mode) .mockup-only-el { display: none !important; }
   font-size: 12px;
   text-align: center;
 }
+
+/* Scheduled-listing controls in the workflow header. */
+.schedule-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 8px;
+}
+.schedule-group input[type="datetime-local"] {
+  padding: 5px 8px;
+  font-size: 13px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: white;
+}

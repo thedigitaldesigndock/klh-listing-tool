@@ -25,30 +25,31 @@ PRESETS_DIR = REPO_ROOT / "presets"
 # --------------------------------------------------------------------------- #
 
 def test_load_bundle_has_expected_products():
-    """All 22 products from the new catalog should be present."""
+    """All 16 products from the catalog should be present.
+
+    The old C/D/E/F (8 products) were merged into CDEF (2 products):
+      22 - 8 + 2 = 16.
+    """
     bundle = presets.load(PRESETS_DIR)
     expected_mount_layouts = {
         "a4_mount_a", "a4_mount_b",
         "10x8_mount",
         "16x12_mount_a", "16x12_mount_b",
-        "16x12_mount_c", "16x12_mount_d",
-        "16x12_mount_e", "16x12_mount_f",
+        "16x12_mount_cdef",
     }
     expected_frame_layouts = {
         "a4_frame_a", "a4_frame_b",
         "10x8_frame",
         "16x12_frame_a", "16x12_frame_b",
-        "16x12_frame_c", "16x12_frame_d",
-        "16x12_frame_e", "16x12_frame_f",
+        "16x12_frame_cdef",
     }
     expected_photo_only = {
-        "photo_6x4", "photo_10x8", "photo_12x8", "card_only",
+        "photo_6x4", "photo_10x8", "photo_12x8", "odd_card", "odd_photo",
     }
     expected = expected_mount_layouts | expected_frame_layouts | expected_photo_only
     assert expected <= set(bundle.products)
-    # And there should be exactly 22 products — no accidental extras.
-    assert len(bundle.products) == 22, \
-        f"expected 22 products, got {len(bundle.products)}: {sorted(bundle.products)}"
+    assert len(bundle.products) == 17, \
+        f"expected 17 products, got {len(bundle.products)}: {sorted(bundle.products)}"
 
 
 def test_load_defaults_contain_core_sections():
@@ -95,10 +96,12 @@ def test_defaults_specifics_have_other_styles_cross_sell():
     """Kim's #2 FAQ question gets its own specific."""
     bundle = presets.load(PRESETS_DIR)
     specifics = bundle.defaults["item_specifics"]
-    assert "Other Styles" in specifics
-    # "Other Styles" is a cross-sell advertising format availability; it's
-    # the ONE intentional exception to the no-leak rule, so we exempt it
-    # from the leak check below. Its job is to name every format Kim does.
+    assert "More In Our Shop" in specifics
+    # "More In Our Shop" is a cross-sell advertising format availability;
+    # it's the ONE intentional exception to the no-leak rule, so we
+    # exempt it from the leak check below. Its job is to name every
+    # format Kim does — so A4 / 10x8 / 16x12 / Mount / Frame etc. are
+    # allowed to appear in this value only.
 
 
 def test_defaults_specifics_have_no_product_leak():
@@ -110,7 +113,7 @@ def test_defaults_specifics_have_no_product_leak():
     """
     bundle = presets.load(PRESETS_DIR)
     specifics = bundle.defaults["item_specifics"]
-    exempt = {"Other Styles"}
+    exempt = {"More In Our Shop"}
     for name, value in specifics.items():
         if name in exempt:
             continue
@@ -166,7 +169,7 @@ def test_unknown_product_key_raises():
 def test_render_title_basic():
     bundle = presets.load(PRESETS_DIR)
     title = presets.render_title(bundle, "photo_10x8", "Tim Allen")
-    assert title.startswith("Tim Allen Signed 10x8 Photo Display Autograph")
+    assert title.startswith("Tim Allen Hand Signed 10x8 Photo Display Autograph")
     assert "  " not in title  # no accidental double space from empty team_suffix
 
 
@@ -237,7 +240,8 @@ def test_render_description_supports_extra_placeholders():
 def test_pick_template_id_plain_photo_returns_none():
     bundle = presets.load(PRESETS_DIR)
     assert presets.pick_template_id(bundle, "photo_6x4") is None
-    assert presets.pick_template_id(bundle, "card_only") is None
+    assert presets.pick_template_id(bundle, "odd_card") is None
+    assert presets.pick_template_id(bundle, "odd_photo") is None
 
 
 def test_pick_template_id_uses_product_default():
@@ -245,9 +249,10 @@ def test_pick_template_id_uses_product_default():
     # Each mount/frame variant has its own product key → template_id
     # maps 1:1 to the template folder. No variant-picking needed here.
     assert presets.pick_template_id(bundle, "16x12_mount_a") == "16x12-a-mount"
-    assert presets.pick_template_id(bundle, "16x12_mount_c") == "16x12-c-mount"
     assert presets.pick_template_id(bundle, "a4_mount_a") == "a4-a-mount"
     assert presets.pick_template_id(bundle, "a4_frame_b") == "a4-b-frame"
+    # CDEF default is 16x12-c-mount (the first variant)
+    assert presets.pick_template_id(bundle, "16x12_mount_cdef") == "16x12-c-mount"
 
 
 def test_pick_template_id_orientation_landscape_portrait():
@@ -262,6 +267,31 @@ def test_pick_template_id_orientation_landscape_portrait():
     assert presets.pick_template_id(
         bundle, "10x8_frame", orientation="portrait"
     ) == "10x8-frame-port"
+
+
+def test_pick_template_id_cdef_compound_key():
+    """16x12 CDEF uses compound keys: photo_size + orientation."""
+    bundle = presets.load(PRESETS_DIR)
+    # 12x8 landscape → C template
+    assert presets.pick_template_id(
+        bundle, "16x12_mount_cdef",
+        orientation="landscape", photo_size="12x8",
+    ) == "16x12-c-mount"
+    # 12x8 portrait → D template
+    assert presets.pick_template_id(
+        bundle, "16x12_mount_cdef",
+        orientation="portrait", photo_size="12x8",
+    ) == "16x12-d-mount"
+    # 10x8 landscape → E template
+    assert presets.pick_template_id(
+        bundle, "16x12_frame_cdef",
+        orientation="landscape", photo_size="10x8",
+    ) == "16x12-e-frame"
+    # 10x8 portrait → F template
+    assert presets.pick_template_id(
+        bundle, "16x12_frame_cdef",
+        orientation="portrait", photo_size="10x8",
+    ) == "16x12-f-frame"
 
 
 # --------------------------------------------------------------------------- #
@@ -295,7 +325,7 @@ def test_build_listing_shape():
     # Core fields
     assert listing["product_key"] == "photo_10x8"
     assert listing["template_id"] is None
-    assert listing["title"].startswith("Tim Allen Signed 10x8 Photo")
+    assert listing["title"].startswith("Tim Allen Hand Signed 10x8 Photo")
     assert "{size_clause}" not in listing["description_html"]
     assert listing["price_gbp"] == pytest.approx(19.99)
     assert listing["category_id"] == 2312  # film_tv
@@ -308,6 +338,71 @@ def test_build_listing_shape():
     )
     assert listing["return_policy"]["returns_accepted"] is True
     assert listing["item_specifics"]["Signed"] == "Yes"
+
+
+def test_build_listing_store_category_from_knowledge():
+    """Non-card listings pick up store_category_id from knowledge.yaml."""
+    bundle = presets.load(PRESETS_DIR)
+    listing = presets.build_listing(
+        bundle,
+        product_key="photo_10x8",
+        name="Wayne Rooney",
+        field1="Man Utd",
+        category="Football",
+    )
+    assert listing["store_category_id"] == 1954551013   # Football Autographs
+
+
+def test_build_listing_store_category_music():
+    bundle = presets.load(PRESETS_DIR)
+    listing = presets.build_listing(
+        bundle,
+        product_key="a4_frame_a",
+        name="Debbie Harry",
+        field1="Blondie",
+        category="Music",
+    )
+    assert listing["store_category_id"] == 1954554013   # Music Autographs
+
+
+def test_build_listing_store_category_odd_card_forced_to_white_cards():
+    """
+    odd_card listings ALWAYS land in "Signed White Cards" regardless of
+    what subject/category the signer has. Kim's convention: all odd-size
+    cards share one shop bucket.
+    """
+    bundle = presets.load(PRESETS_DIR)
+    listing = presets.build_listing(
+        bundle,
+        product_key="odd_card",
+        name="Wayne Rooney",
+        field1="Man Utd",
+        category="Football",   # would normally route to Football Autographs
+    )
+    assert listing["store_category_id"] == 85843959013  # Signed White Cards
+
+
+def test_build_listing_store_category_unknown_category_is_none():
+    """Fails open for categories with no knowledge.yaml entry."""
+    bundle = presets.load(PRESETS_DIR)
+    listing = presets.build_listing(
+        bundle,
+        product_key="photo_10x8",
+        name="Some Signer",
+        field1="Something",
+        category="Nonesuch",
+    )
+    assert listing["store_category_id"] is None
+
+
+def test_build_listing_has_vat_20_percent():
+    bundle = presets.load(PRESETS_DIR)
+    listing = presets.build_listing(
+        bundle,
+        product_key="photo_10x8",
+        name="Tim Allen",
+    )
+    assert listing["vat_percent"] == pytest.approx(20.0)
 
 
 def test_build_listing_includes_seller_profiles():
@@ -401,11 +496,10 @@ def test_layout_groups_pair_mounts_with_frames():
         layout = prod.raw.get("layout")
         by_layout.setdefault(layout, []).append(key)
 
-    # 9 mount/frame layouts should each have exactly 2 entries (mount + frame)
+    # 6 mount/frame layouts should each have exactly 2 entries (mount + frame)
     mount_frame_layouts = [
         "a4_a", "a4_b", "10x8",
-        "16x12_a", "16x12_b", "16x12_c",
-        "16x12_d", "16x12_e", "16x12_f",
+        "16x12_a", "16x12_b", "16x12_cdef",
     ]
     for layout in mount_frame_layouts:
         assert layout in by_layout, f"layout {layout!r} missing from catalog"
@@ -424,7 +518,7 @@ def test_layout_groups_pair_mounts_with_frames():
 
 def test_photo_only_products_have_no_template_and_no_secondary():
     bundle = presets.load(PRESETS_DIR)
-    for key in ("photo_6x4", "photo_10x8", "photo_12x8", "card_only"):
+    for key in ("photo_6x4", "photo_10x8", "photo_12x8", "odd_card", "odd_photo"):
         p = bundle.product(key)
         assert p.template_id is None, f"{key} should have template_id=None"
         assert p.raw.get("needs_secondary") is None
@@ -570,19 +664,20 @@ def test_render_title_packs_memorabilia_but_not_coa_when_tight():
     token) and COA is dropped.
     """
     bundle = presets.load(PRESETS_DIR)
-    # a4_mount_a base = 40 chars; " Memorabilia" = 12, " COA" = 4.
-    # Name + team_suffix = 80 - 40 - 12 = 28 chars would be max to fit
-    # Memorabilia without COA. Need name+team in the 25..28 range.
+    # a4_mount_a base with Hand = 45 chars; " Memorabilia" = 12, " COA" = 4.
+    # Name + team_suffix must leave room for Memorabilia (≤ 80-45-12 = 23)
+    # but NOT also COA (> 80-45-12-4 = 19). Target name+team ∈ [20, 23].
     title = presets.render_title(
         bundle,
         "a4_mount_a",
-        "Keane Lewis-Potter",           # 18
-        field1="Brentford",              # " Brentford" = 10 → total suffix 10
-        category="Football",             # not in_title for football
+        "Mel C",                        # 5
+        field1="Rolling Stones",        # " Rolling Stones" = 15 → total 20
+        category="Music",               # in_title: false → category dropped
     )
-    assert "Brentford" in title
+    assert "Rolling Stones" in title
+    assert "Hand" in title               # Hand is included — Field1 fit leaves room
     assert "Memorabilia" in title
-    assert "COA" not in title
+    assert " COA" not in title
     assert len(title) <= 80
 
 
@@ -746,7 +841,7 @@ def test_build_listing_no_best_offer_below_threshold():
     bundle = presets.load(PRESETS_DIR)
     listing = presets.build_listing(
         bundle,
-        product_key="card_only",
+        product_key="odd_card",
         name="Somebody",
         price_gbp=14.99,
     )

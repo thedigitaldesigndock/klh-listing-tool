@@ -48,16 +48,16 @@ def test_build_catalog_shape(bundle: pp.PresetsBundle):
         "tile_groups", "tiles", "products", "layout_twins",
         "orphan_layouts", "total_tiles", "total_products",
     }
-    assert cat["total_products"] == 22
-    assert cat["total_tiles"] >= 11  # 9 mount/frame + 4 photo-only
+    assert cat["total_products"] == 17
+    assert cat["total_tiles"] >= 8  # 6 mount/frame + 5 photo-only
     assert cat["orphan_layouts"] == []
 
 
 def test_build_catalog_toggleable_tiles_have_both_twins(bundle: pp.PresetsBundle):
     cat = catalog.build_catalog(bundle)
     toggleable = [t for t in cat["tiles"] if t["has_toggle"]]
-    # 9 layouts: a4_a, a4_b, 10x8, 16x12_a..f
-    assert len(toggleable) == 9
+    # 6 layouts: a4_a, a4_b, 10x8, 16x12_a, 16x12_b, 16x12_cdef
+    assert len(toggleable) == 6
     for tile in toggleable:
         assert tile["mount"] is not None
         assert tile["frame"] is not None
@@ -68,7 +68,7 @@ def test_build_catalog_photo_only_tiles_have_no_frame_twin(bundle: pp.PresetsBun
     cat = catalog.build_catalog(bundle)
     photo_only = [t for t in cat["tiles"] if not t["has_toggle"]]
     assert {t["layout"] for t in photo_only} == {
-        "photo_6x4", "photo_10x8", "photo_12x8", "card_only",
+        "photo_6x4", "photo_10x8", "photo_12x8", "odd_card", "odd_photo",
     }
     for tile in photo_only:
         assert tile["frame"] is None
@@ -94,9 +94,24 @@ def test_build_catalog_tile_groups(bundle: pp.PresetsBundle):
     assert len(groups) == 3
     labels = [g["label"] for g in groups]
     assert labels == ["Other Products", "10x8 / A4", "16x12"]
+    # 16x12 group should have 3 tiles (A, B, CDEF) not 6
+    g16 = [g for g in groups if g["label"] == "16x12"][0]
+    assert len(g16["tiles"]) == 3
+    assert {t["layout"] for t in g16["tiles"]} == {"16x12_a", "16x12_b", "16x12_cdef"}
     # All tiles across groups should equal the flat tiles list.
     flat_from_groups = [t for g in groups for t in g["tiles"]]
     assert len(flat_from_groups) == len(cat["tiles"])
+
+
+def test_build_catalog_cdef_tile_has_toggle(bundle: pp.PresetsBundle):
+    """The merged CDEF tile must have both mount and frame variants."""
+    cat = catalog.build_catalog(bundle)
+    cdef = [t for t in cat["tiles"] if t["layout"] == "16x12_cdef"]
+    assert len(cdef) == 1
+    tile = cdef[0]
+    assert tile["has_toggle"] is True
+    assert tile["mount"]["product_key"] == "16x12_mount_cdef"
+    assert tile["frame"]["product_key"] == "16x12_frame_cdef"
 
 
 def test_product_view_has_all_frontend_fields(bundle: pp.PresetsBundle):
@@ -115,16 +130,16 @@ def test_product_view_has_all_frontend_fields(bundle: pp.PresetsBundle):
 
 
 def test_preview_url_set_for_existing_templates(bundle: pp.PresetsBundle):
-    """16x12-c-mount has a preview.jpg checked in, so it should resolve."""
+    """16x12_mount_cdef resolves to the composite preview via ?variant=cdef."""
     cat = catalog.build_catalog(bundle)
-    p = cat["products"]["16x12_mount_c"]
-    assert p["preview_url"] == "/api/template-preview/16x12-c-mount"
+    p = cat["products"]["16x12_mount_cdef"]
+    assert p["preview_url"] == "/api/template-preview/16x12-c-mount?variant=cdef"
 
 
 def test_preview_url_placeholder_for_photo_only_products(bundle: pp.PresetsBundle):
     """Photo-only products have no template but get a static placeholder."""
     cat = catalog.build_catalog(bundle)
-    for key in ("photo_6x4", "photo_10x8", "photo_12x8", "card_only"):
+    for key in ("photo_6x4", "photo_10x8", "photo_12x8", "odd_card", "odd_photo"):
         url = cat["products"][key]["preview_url"]
         assert url is not None, f"{key}: should have a placeholder preview_url"
         assert "/static/placeholders/" in url, \
@@ -145,10 +160,10 @@ def test_get_products_returns_catalog(client: TestClient):
     r = client.get("/api/products")
     assert r.status_code == 200
     data = r.json()
-    assert data["total_products"] == 22
-    # 13 tiles total: 9 toggleable + 4 photo-only
-    assert data["total_tiles"] == 13
-    assert len(data["tiles"]) == 13
+    assert data["total_products"] == 17
+    # 11 tiles total: 6 toggleable + 5 photo-only
+    assert data["total_tiles"] == 11
+    assert len(data["tiles"]) == 11
 
 
 def test_index_serves_shell(client: TestClient):

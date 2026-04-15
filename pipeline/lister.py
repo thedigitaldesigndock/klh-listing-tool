@@ -287,6 +287,29 @@ def build_add_item_xml(
         parts.append(_el("SKU", listing["sku"]))
     parts.append(_el("Site", _site_to_trading_name(site)))
 
+    # Store category (Kim's shop bucket — different from the site
+    # PrimaryCategory above). Skipped when None so new categories we
+    # haven't mapped yet land in the store's default "Other" bucket
+    # instead of being rejected.
+    store_cat = listing.get("store_category_id")
+    if store_cat:
+        parts.append(
+            "<Storefront>"
+            + _el("StoreCategoryID", store_cat)
+            + "</Storefront>"
+        )
+
+    # VAT — Kim's account is VAT-registered. Emit VATDetails whenever a
+    # non-None vat_percent is on the listing; eBay records the rate and
+    # shows it in the listing footer.
+    vat_percent = listing.get("vat_percent")
+    if vat_percent is not None:
+        parts.append(
+            "<VATDetails>"
+            + _el("VATPercent", f"{float(vat_percent):.1f}")
+            + "</VATDetails>"
+        )
+
     # Pictures (hosted on EPS, URLs from upload_site_hosted_picture)
     parts.append(_picture_details_xml(picture_urls))
 

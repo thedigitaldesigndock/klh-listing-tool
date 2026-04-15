@@ -227,6 +227,12 @@ def load(presets_dir: Path = PRESETS_DIR) -> PresetsBundle:
 
 MAX_TITLE_LEN = 80  # eBay GB hard cap
 
+# Kim's "Signed White Cards" store category. All odd_card listings
+# route here regardless of subject — it's a single shared bucket for
+# every odd-size signed card (tickets, index cards, autograph slips).
+# Fetched live via GetStore on 2026-04-15.
+_STORE_CATEGORY_WHITE_CARDS = 85843959013
+
 # Optional trailing tokens that get appended to a rendered title IF they
 # fit inside the 80-char budget. They are tried in order and each is
 # added greedily (appending one never prevents the next from also being
@@ -240,14 +246,26 @@ MAX_TITLE_LEN = 80  # eBay GB hard cap
 TITLE_FILLER_TOKENS: tuple[str, ...] = (" Memorabilia", " COA")
 
 
-def _compose_title(pattern: str, name: str, suffix: str) -> str:
-    """Plug name + team_suffix into a product title pattern. Accepts
-    both `{qualifier_suffix}` (legacy) and `{team_suffix}` (current)
-    so stale patterns still render."""
+def _compose_title(
+    pattern: str,
+    name: str,
+    suffix: str,
+    hand_prefix: str = "",
+) -> str:
+    """Plug name + team_suffix + hand_prefix into a product title pattern.
+
+    Accepts both `{qualifier_suffix}` (legacy) and `{team_suffix}`
+    (current) for the team slot. `{hand_prefix}` is optional — patterns
+    that don't reference it silently ignore the kwarg. It renders as
+    either " Hand" (if there's budget) or "" (dropped to make room for
+    Field1). The space is inside the token so "{name}{hand_prefix}
+    Signed …" works cleanly either way.
+    """
     return pattern.format(
         name=name.strip(),
         team_suffix=suffix,
         qualifier_suffix=suffix,
+        hand_prefix=hand_prefix,
     )
 
 
@@ -308,15 +326,25 @@ def render_title(
     """
     Apply the product's title pattern.
 
-    title_pattern uses two placeholders:
+    title_pattern uses three placeholders:
         {name}         — signer name (required)
+        {hand_prefix}  — " Hand" (if it fits after Field1) or ""
         {team_suffix}  — " <field1>" (+ " <Category>" if in_title) or ""
 
-    Title is built in three candidate lengths and the LONGEST that fits
-    inside eBay's 80-char cap is picked. Order:
-        1. " <field1> <Category>"  (only if knowledge says in_title: true)
-        2. " <field1>"
-        3. ""                       (no team suffix at all)
+    Priority (highest → lowest, dropped first when over 80-char cap):
+        1. Name                              (never dropped — error instead)
+        2. Product descriptor (Signed Card / Photo Mount / …)
+        3. Autograph
+        4. Field1 (from Nicky's filename — Club / TV / Band / Keywords)
+        5. Category keyword (if knowledge.yaml `in_title: true`)
+        6. "Hand" (in front of "Signed")
+        7. Memorabilia                       (appended filler if room)
+        8. COA                               (appended filler if room)
+
+    Build loop tries Field1 candidates longest-first; within each
+    candidate it prefers the form WITH " Hand" and falls back to the
+    form WITHOUT "Hand" before trimming Field1 further. Then Memorabilia
+    and COA are greedily appended if budget remains.
 
     Example:
         pattern: "{name} Signed A4 Photo Mount Display{team_suffix} Autograph"
@@ -338,16 +366,25 @@ def render_title(
 
     candidates = _build_team_suffix(bundle, field1, category)
 
+    # Field1 is prioritised ahead of "Hand" in "Hand Signed". For each
+    # Field1 candidate (longest first), we try WITH " Hand" first; if
+    # that overflows, we drop "Hand" from this Field1 candidate before
+    # falling back to a shorter Field1. This means Field1 will only be
+    # trimmed once even dropping "Hand" can't save the current form.
     chosen: Optional[str] = None
     for suffix in candidates:
-        attempt = _compose_title(product.title_pattern, name, suffix)
-        if len(attempt) <= MAX_TITLE_LEN:
-            chosen = attempt
+        with_hand = _compose_title(product.title_pattern, name, suffix, " Hand")
+        if len(with_hand) <= MAX_TITLE_LEN:
+            chosen = with_hand
+            break
+        without_hand = _compose_title(product.title_pattern, name, suffix, "")
+        if len(without_hand) <= MAX_TITLE_LEN:
+            chosen = without_hand
             break
 
     if chosen is None:
-        # Even the empty-suffix form is too long — name is too long.
-        overflow = _compose_title(product.title_pattern, name, "")
+        # Even the empty-suffix, no-Hand form is too long — name is too long.
+        overflow = _compose_title(product.title_pattern, name, "", "")
         raise PresetsError(
             f"Rendered title is {len(overflow)} chars "
             f"(>{MAX_TITLE_LEN}, eBay max):\n  {overflow}"
@@ -391,6 +428,7 @@ def pick_template_id(
     product_key: str,
     *,
     orientation: Optional[str] = None,
+    photo_size: Optional[str] = None,
     variant: Optional[str] = None,
 ) -> Optional[str]:
     """
@@ -398,8 +436,11 @@ def pick_template_id(
 
     Resolution order (highest to lowest priority):
       1. explicit `variant` argument (e.g. "16x12-c-mount")
-      2. `orientation` lookup in bundle.variants[product_key] ("landscape"/"portrait")
-      3. the product's default template_id from products.yaml
+      2. compound key "{photo_size}_{orientation}" in variants
+         (used by 16x12_cdef: "12x8_landscape" → "16x12-c-mount")
+      3. plain `orientation` key in variants
+         (used by 10x8: "landscape" → "10x8-mount-land")
+      4. the product's default template_id from products.yaml
 
     Returns None for plain-photo products (no template).
     """
@@ -416,13 +457,17 @@ def pick_template_id(
             )
         return variant
 
-    # 2. Orientation-based lookup (10x8 mount/frame have land/port templates).
-    if orientation:
-        variants_for_product = bundle.variants.get(product_key, {}) or {}
-        if orientation in variants_for_product:
+    # 2+3. Variant lookup — try compound key first, then plain orientation.
+    variants_for_product = bundle.variants.get(product_key, {}) or {}
+    if variants_for_product:
+        if photo_size and orientation:
+            compound = f"{photo_size}_{orientation}"
+            if compound in variants_for_product:
+                return variants_for_product[compound]
+        if orientation and orientation in variants_for_product:
             return variants_for_product[orientation]
 
-    # 3. Fall back to the product default.
+    # 4. Fall back to the product default.
     return product.template_id
 
 
@@ -566,6 +611,7 @@ def build_listing(
     category: Optional[str] = None,
     subject: Optional[str] = None,
     orientation: Optional[str] = None,
+    photo_size: Optional[str] = None,
     variant: Optional[str] = None,
     price_gbp: Optional[float] = None,
     sku: Optional[str] = None,
@@ -644,9 +690,27 @@ def build_listing(
         bundle,
         product_key,
         orientation=orientation,
+        photo_size=photo_size,
         variant=variant,
     )
     category_id = get_category_id(bundle, subject)
+
+    # ---- Store category (Kim's eBay shop bucket) -----------------------
+    # Order of precedence:
+    #   1. odd_card layout → "Signed White Cards" regardless of category
+    #   2. knowledge.yaml's per-category store_category_id
+    #   3. None → eBay defaults to the store's top-level "Other" bucket.
+    store_category_id: Optional[int] = None
+    if product.raw.get("layout") == "odd_card":
+        store_category_id = _STORE_CATEGORY_WHITE_CARDS
+    else:
+        rule = bundle.category_rule(category)
+        raw_sc = rule.get("store_category_id")
+        if raw_sc is not None:
+            try:
+                store_category_id = int(raw_sc)
+            except (TypeError, ValueError):
+                store_category_id = None
 
     effective_price = float(
         price_gbp if price_gbp is not None else product.default_price_gbp
@@ -667,6 +731,14 @@ def build_listing(
         specifics.update({str(k): str(v) for k, v in item_specifics.items()})
 
     # ---- Assemble the listing dict -------------------------------------
+    # VAT — Kim is VAT-registered; every listing carries a 20% rate.
+    # Held in defaults.yaml so it can be bumped if HMRC changes the rate.
+    vat_percent = bundle.defaults.get("vat_percent")
+    try:
+        vat_percent = float(vat_percent) if vat_percent is not None else None
+    except (TypeError, ValueError):
+        vat_percent = None
+
     listing: dict = {
         "product_key": product_key,
         "template_id": template_id,
@@ -675,6 +747,8 @@ def build_listing(
         "price_gbp": effective_price,
         "sku": sku,
         "category_id": category_id,
+        "store_category_id": store_category_id,
+        "vat_percent": vat_percent,
         "marketplace":      copy.deepcopy(bundle.defaults.get("marketplace", {})),
         "listing":          copy.deepcopy(bundle.defaults.get("listing", {})),
         "seller_profiles":  copy.deepcopy(bundle.defaults.get("seller_profiles", {})),

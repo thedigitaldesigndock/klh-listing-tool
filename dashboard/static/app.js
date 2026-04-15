@@ -51,6 +51,8 @@
   const $renderAllBtn   = document.getElementById("render-all-btn");
   const $downloadAllBtn = document.getElementById("download-all-btn");
   const $listAllBtn     = document.getElementById("list-all-btn");
+  const $listAllScheduledBtn = document.getElementById("list-all-scheduled-btn");
+  const $scheduleInput  = document.getElementById("schedule-input");
   const $scanStatus     = document.getElementById("scan-status");
   const $rowsTable      = document.getElementById("rows-table");
   const $rowsBody       = document.getElementById("rows-body");
@@ -93,6 +95,9 @@
     $renderAllBtn.addEventListener("click", onRenderAllClick);
     $downloadAllBtn.addEventListener("click", onDownloadAllClick);
     $listAllBtn.addEventListener("click", onListAllClick);
+    if ($listAllScheduledBtn) {
+      $listAllScheduledBtn.addEventListener("click", onListAllScheduledClick);
+    }
     $backBtn.addEventListener("click", onBackClick);
     $bulkPriceApply.addEventListener("click", onBulkPriceApply);
     $bulkPriceInput.addEventListener("keydown", (e) => {
@@ -218,7 +223,8 @@
 
   function placeholderLabel(product) {
     if (product.layout && product.layout.startsWith("photo_")) return "photo";
-    if (product.layout === "card_only") return "card";
+    if (product.layout === "odd_card") return "card";
+    if (product.layout === "odd_photo") return "photo";
     return "no preview";
   }
 
@@ -340,7 +346,23 @@
       ? Number(sortedPrices[0])
       : state.selectedProduct.default_price_gbp;
 
-    state.rows = matched.map((m) => ({
+    // Products with no `needs_secondary` (photo-only + odd-size card/
+    // photo) don't require a matching file in TWO/ — pull those in
+    // from unmatched_pictures so Nicky doesn't have to fake cards to
+    // get rows.
+    const needsSecondary = !!state.selectedProduct.needs_secondary;
+    const extra = needsSecondary
+      ? []
+      : (report.unmatched_pictures || [])
+          .filter((p) => p.pair_key && p.is_jpg)
+          .map((p) => ({
+            pair_key: p.pair_key,
+            parsed:   p.parsed,
+            picture:  p,
+            card:     null,
+          }));
+
+    state.rows = [...matched, ...extra].map((m) => ({
       pair_key:     m.pair_key,
       parsed:       m.parsed,
       picture:      m.picture,
@@ -371,6 +393,7 @@
     $renderAllBtn.disabled  = state.rows.length === 0;
     $downloadAllBtn.disabled = state.rows.length === 0;
     $listAllBtn.disabled    = state.rows.length === 0;
+    if ($listAllScheduledBtn) $listAllScheduledBtn.disabled = state.rows.length === 0;
 
     // Hide catalog + show back-button once we have rows to work with.
     if (state.rows.length > 0) {
@@ -608,6 +631,16 @@
       btnVerify.addEventListener("click", () => verifyRow(i));
       actionsWrap.appendChild(btnVerify);
 
+      const btnListScheduled = document.createElement("button");
+      btnListScheduled.className = "btn btn-small";
+      btnListScheduled.textContent = "List scheduled";
+      btnListScheduled.disabled = !readyToList;
+      btnListScheduled.title = readyToList
+        ? "Schedule this listing for the date/time above"
+        : "Render the mockup first";
+      btnListScheduled.addEventListener("click", () => listRow(i, false, true));
+      actionsWrap.appendChild(btnListScheduled);
+
       const btnList = document.createElement("button");
       btnList.className = "btn btn-small btn-danger";
       btnList.textContent = "List live";
@@ -782,16 +815,38 @@
     }
   }
 
-  async function listRow(i, skipConfirm = false) {
+  function scheduleAtIso() {
+    if (!$scheduleInput || !$scheduleInput.value) return null;
+    // datetime-local gives "YYYY-MM-DDTHH:MM" (no timezone). Treat as
+    // local time and convert to ISO8601 so the server parses it as
+    // a real instant.
+    const dt = new Date($scheduleInput.value);
+    if (isNaN(dt.getTime())) return null;
+    return dt.toISOString();
+  }
+
+  async function listRow(i, skipConfirm = false, scheduled = false) {
     const row = state.rows[i];
     if (!row || !state.selectedProduct) return;
-    if (!skipConfirm) {
-      const title = row.title || row.parsed?.name || row.pair_key;
-      if (!confirm(`Submit LIVE listing for "${title}" at £${row.price.toFixed(2)}? This cannot be undone.`)) {
+
+    let scheduleAt = null;
+    if (scheduled) {
+      scheduleAt = scheduleAtIso();
+      if (!scheduleAt) {
+        alert("Pick a schedule date/time in the 'Schedule for' box first.");
         return;
       }
     }
-    setRowStatus(i, "listing", "");
+
+    if (!skipConfirm) {
+      const title = row.title || row.parsed?.name || row.pair_key;
+      const prompt = scheduled
+        ? `Schedule listing for "${title}" at £${row.price.toFixed(2)} for ${$scheduleInput.value.replace("T", " ")}?`
+        : `Submit LIVE listing for "${title}" at £${row.price.toFixed(2)}? This cannot be undone.`;
+      if (!confirm(prompt)) return;
+    }
+
+    setRowStatus(i, scheduled ? "scheduling" : "listing", "");
     try {
       const res = await fetch("/api/list", {
         method:  "POST",
@@ -799,12 +854,14 @@
         body:    JSON.stringify(listPayload(row, {
           verify_only: false,
           confirm:     true,
+          schedule_at: scheduleAt,
         })),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.detail || `POST /api/list → ${res.status}`);
       const itemId = data?.result?.ItemID || data?.result?.item_id || "";
-      setRowStatus(i, "listed", itemId ? `Listed · ${itemId}` : "Listed");
+      const label  = scheduled ? "Scheduled" : "Listed";
+      setRowStatus(i, "listed", itemId ? `${label} · ${itemId}` : label);
     } catch (err) {
       setRowStatus(i, "error", err.message);
     }
@@ -883,6 +940,39 @@
     for (const { i } of eligible) {
       // eslint-disable-next-line no-await-in-loop
       await listRow(i, /* skipConfirm */ true);
+    }
+  }
+
+  async function onListAllScheduledClick() {
+    if (!state.rows.length) return;
+    const scheduleAt = scheduleAtIso();
+    if (!scheduleAt) {
+      alert("Pick a schedule date/time in the 'Schedule for' box first.");
+      return;
+    }
+    const eligible = state.rows
+      .map((row, i) => ({ row, i }))
+      .filter(({ row }) => {
+        if (row.status === "listed") return false;
+        const isTemplated = !!state.selectedProduct?.template_id;
+        const isRaw = !isTemplated || row.is_raw_photo;
+        return isRaw || !!row.mockup_url;
+      });
+
+    if (!eligible.length) {
+      alert("No rows are ready to list — render mockups first.");
+      return;
+    }
+
+    const total = eligible.reduce((acc, { row }) => acc + (row.price || 0), 0);
+    const when = $scheduleInput.value.replace("T", " ");
+    const msg =
+      `Schedule ${eligible.length} listing(s) for ${when}, total £${total.toFixed(2)}?`;
+    if (!confirm(msg)) return;
+
+    for (const { i } of eligible) {
+      // eslint-disable-next-line no-await-in-loop
+      await listRow(i, /* skipConfirm */ true, /* scheduled */ true);
     }
   }
 

@@ -7,7 +7,9 @@ REM  after `git clone`. It will:
 REM    1. Create the Python venv
 REM    2. Install dependencies
 REM    3. Create %USERPROFILE%\.klh\ with config.yaml + empty .env
+REM       (auto-detects OneDrive desktop redirect, no hardcoded user)
 REM    4. Create C:\KLH\data\ working dirs
+REM    5. Create ONE\ and TWO\ on the real desktop
 REM
 REM  After this finishes, open %USERPROFILE%\.klh\.env in Notepad
 REM  and paste in the eBay API credentials (see INSTALL.md).
@@ -57,11 +59,29 @@ echo === Step 4/5: Creating config directory ===
 set KLH_CFG=%USERPROFILE%\.klh
 if not exist "%KLH_CFG%" mkdir "%KLH_CFG%"
 
+REM ── Detect the real desktop ──────────────────────────────────────
+REM OneDrive on Windows often redirects %USERPROFILE%\Desktop into
+REM %USERPROFILE%\OneDrive\Desktop. We need the path the user actually
+REM sees in Finder/Explorer so ONE\ and TWO\ land on the visible desktop.
+if exist "%USERPROFILE%\OneDrive\Desktop" (
+    set DESKTOP=%USERPROFILE%\OneDrive\Desktop
+    echo Detected OneDrive-redirected desktop.
+) else (
+    set DESKTOP=%USERPROFILE%\Desktop
+    echo Using standard desktop.
+)
+
+REM YAML wants forward slashes — convert backslashes for the config file.
+set "DESKTOP_FWD=!DESKTOP:\=/!"
+
 if exist "%KLH_CFG%\config.yaml" (
     echo config.yaml already exists at %KLH_CFG%\config.yaml - leaving alone.
 ) else (
+    REM Copy template, then substitute __DESKTOP__ placeholder via
+    REM PowerShell (batch's string ops can't do file-wide replace cleanly).
     copy /Y install\config.yaml.template "%KLH_CFG%\config.yaml" >nul
-    echo Wrote %KLH_CFG%\config.yaml
+    powershell -NoProfile -Command "(Get-Content -Raw '%KLH_CFG%\config.yaml') -replace '__DESKTOP__', '%DESKTOP_FWD%' | Set-Content -NoNewline '%KLH_CFG%\config.yaml'"
+    echo Wrote %KLH_CFG%\config.yaml with desktop = %DESKTOP%
 )
 
 if exist "%KLH_CFG%\.env" (
@@ -79,14 +99,13 @@ if not exist "C:\KLH\data\mockups" mkdir "C:\KLH\data\mockups"
 if not exist "C:\KLH\data\listed" mkdir "C:\KLH\data\listed"
 echo Created C:\KLH\data\ working dirs.
 
-REM ONE/ and TWO/ live on the user's desktop — that's where Nicky/Kim
-REM drop scans. If %USERPROFILE%\Desktop doesn't resolve (OneDrive-
-REM redirected desktops can surprise us), fall through silently and
-REM leave it to the user to create by hand.
-if exist "%USERPROFILE%\Desktop" (
-    if not exist "%USERPROFILE%\Desktop\ONE" mkdir "%USERPROFILE%\Desktop\ONE"
-    if not exist "%USERPROFILE%\Desktop\TWO" mkdir "%USERPROFILE%\Desktop\TWO"
-    echo Created ONE\ and TWO\ on desktop.
+REM Create ONE\ and TWO\ on the real (possibly OneDrive-redirected) desktop.
+if exist "%DESKTOP%" (
+    if not exist "%DESKTOP%\ONE" mkdir "%DESKTOP%\ONE"
+    if not exist "%DESKTOP%\TWO" mkdir "%DESKTOP%\TWO"
+    echo Created ONE\ and TWO\ at %DESKTOP%
+) else (
+    echo WARNING: Could not find %DESKTOP% — create ONE\ and TWO\ by hand.
 )
 
 echo.

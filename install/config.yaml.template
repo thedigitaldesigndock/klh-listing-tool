@@ -5,14 +5,17 @@
 #
 # Kim and Nicky each have their own local ONE/ and TWO/ scan folders
 # on their desktops and list independently — there is no shared inbox.
-# If the Windows username isn't "Kim", edit the paths below.
+#
+# setup.bat substitutes the desktop placeholder below with the real
+# path for this machine (handles OneDrive-redirected desktops). If you
+# move your scan folders later, edit picture_dir / card_dir directly.
 
 paths:
   # Main scans (Picture side). Nicky/Kim drops scanned photos here.
-  picture_dir:     "C:/Users/kimha/Desktop/ONE"
+  picture_dir:     "__DESKTOP__/ONE"
 
   # Secondary scans (Card side) — signed cards, secondary photos, etc.
-  card_dir:        "C:/Users/kimha/Desktop/TWO"
+  card_dir:        "__DESKTOP__/TWO"
 
   # Local working dirs — auto-created by setup.bat.
   products_dir:    "C:/KLH/klh-listing-tool/presets"

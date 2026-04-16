@@ -299,7 +299,7 @@ products:
     needs_secondary: null
     orientation_lock: null
     extra_images_group: "All Other Products"
-    title_pattern: "{name}{hand_prefix} Signed 10x8 Photo Display{team_suffix} Autograph"
+    title_pattern: "{name}{hand_prefix} Signed 10x8 Photo{team_suffix} Autograph"
     default_price_gbp: 19.99
     suggested_prices: [17.99, 19.99, 24.99, 29.99, 34.99]
     size_clause: "a Signed 10x8 Inch (254mm x 203mm) Photograph."
@@ -314,7 +314,7 @@ products:
     needs_secondary: null
     orientation_lock: null
     extra_images_group: "All Other Products"
-    title_pattern: "{name}{hand_prefix} Signed 12x8 Photo Display{team_suffix} Autograph"
+    title_pattern: "{name}{hand_prefix} Signed 12x8 Photo{team_suffix} Autograph"
     default_price_gbp: 19.99
     suggested_prices: [17.99, 19.99, 24.99, 29.99, 34.99]
     size_clause: "a Signed 12x8 Inch (30cm x 20cm) Photograph."

@@ -17,6 +17,8 @@ if errorlevel 1 (
 )
 
 REM Open browser after a brief delay so the server has time to bind.
+REM We pass --no-browser to the server so it doesn't also open a tab —
+REM otherwise we'd get two duplicate localhost tabs on every launch.
 start "" /B cmd /c "timeout /t 3 >nul && start http://localhost:8765"
 
 echo.
@@ -25,4 +27,4 @@ echo (Close this window to stop the server.)
 echo.
 
 call .venv\Scripts\activate.bat
-python -m dashboard.server --port 8765
+python -m dashboard.server --port 8765 --no-browser

@@ -43,3 +43,5 @@ working/
 !templates/**/*.jpg
 !tests/fixtures/**/*.jpg
 !tests/fixtures/**/*.png
+!dashboard/static/**/*.png
+!dashboard/static/**/*.jpg

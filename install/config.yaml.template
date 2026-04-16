@@ -9,10 +9,10 @@
 
 paths:
   # Main scans (Picture side). Nicky/Kim drops scanned photos here.
-  picture_dir:     "C:/Users/Kim/Desktop/ONE"
+  picture_dir:     "C:/Users/kimha/Desktop/ONE"
 
   # Secondary scans (Card side) — signed cards, secondary photos, etc.
-  card_dir:        "C:/Users/Kim/Desktop/TWO"
+  card_dir:        "C:/Users/kimha/Desktop/TWO"
 
   # Local working dirs — auto-created by setup.bat.
   products_dir:    "C:/KLH/klh-listing-tool/presets"

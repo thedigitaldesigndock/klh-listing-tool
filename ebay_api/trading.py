@@ -435,10 +435,13 @@ def _shape_deep_item(raw: dict[str, Any]) -> dict[str, Any]:
                 specifics[name] = value or ""
 
     selling = raw.get("SellingStatus") or {}
+    primary_cat = raw.get("PrimaryCategory") if isinstance(raw.get("PrimaryCategory"), dict) else {}
     return {
         "item_specifics": specifics,
         "hit_count":      _as_int(raw.get("HitCount")),
         "quantity_sold":  _as_int(selling.get("QuantitySold")),
         "end_time":       raw.get("ListingDetails", {}).get("EndTime") if isinstance(raw.get("ListingDetails"), dict) else None,
         "condition_id":   raw.get("ConditionID"),
+        "category_id":    primary_cat.get("CategoryID"),
+        "category_name":  primary_cat.get("CategoryName"),
     }

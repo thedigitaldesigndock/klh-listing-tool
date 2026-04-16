@@ -536,19 +536,21 @@ def build_revise_item_xml(
     *,
     new_title: Optional[str] = None,
     new_specifics_replace: Optional[dict[str, str]] = None,
+    new_category_id: Optional[str] = None,
 ) -> str:
     """
     Build the inner XML for ReviseFixedPriceItem. Only fields explicitly
     provided are included — eBay treats unsent elements as "leave alone".
 
-    Exactly one of new_title / new_specifics_replace must be truthy
-    (otherwise there's nothing to revise).
+    At least one of new_title / new_specifics_replace / new_category_id
+    must be truthy (otherwise there's nothing to revise).
     """
     if not item_id:
         raise ListerError("revise: item_id is required")
-    if new_title is None and new_specifics_replace is None:
+    if new_title is None and new_specifics_replace is None and new_category_id is None:
         raise ListerError(
-            "revise: nothing to change — pass new_title or new_specifics_replace"
+            "revise: nothing to change — pass new_title, new_specifics_replace, "
+            "or new_category_id"
         )
     if new_title is not None:
         if not new_title:
@@ -557,11 +559,17 @@ def build_revise_item_xml(
             raise ListerError(
                 f"revise: new_title is {len(new_title)} chars (>{MAX_TITLE_LEN})"
             )
+    if new_category_id is not None and not str(new_category_id).strip():
+        raise ListerError("revise: new_category_id must be non-empty")
 
     parts: list[str] = ["<Item>"]
     parts.append(_el("ItemID", item_id))
     if new_title is not None:
         parts.append(_el("Title", new_title))
+    if new_category_id is not None:
+        parts.append("<PrimaryCategory>")
+        parts.append(_el("CategoryID", str(new_category_id)))
+        parts.append("</PrimaryCategory>")
     if new_specifics_replace is not None:
         parts.append(_revise_specifics_xml(new_specifics_replace))
     parts.append("</Item>")
@@ -591,6 +599,7 @@ def revise_listing(
     *,
     new_title: Optional[str] = None,
     new_specifics_replace: Optional[dict[str, str]] = None,
+    new_category_id: Optional[str] = None,
     confirm: bool = False,
 ) -> dict[str, Any]:
     """
@@ -612,6 +621,7 @@ def revise_listing(
         item_id,
         new_title=new_title,
         new_specifics_replace=new_specifics_replace,
+        new_category_id=new_category_id,
     )
     root = trading_call("ReviseFixedPriceItem", inner)
     return {

@@ -191,7 +191,8 @@ def upsert_summary(conn: sqlite3.Connection, row: dict[str, Any]) -> None:
 
 
 def upsert_deep(conn: sqlite3.Connection, item_id: str, deep: dict[str, Any]) -> None:
-    """Fill in the fields that only GetItem returns (specifics + hit count)."""
+    """Fill in the fields that only GetItem returns (specifics + hit count
+    + category, which GetMyeBaySelling doesn't always include)."""
     conn.execute(
         """
         UPDATE listings SET
@@ -200,6 +201,8 @@ def upsert_deep(conn: sqlite3.Connection, item_id: str, deep: dict[str, Any]) ->
             quantity_sold    = :quantity_sold,
             end_time         = :end_time,
             condition_id     = :condition_id,
+            category_id      = COALESCE(:category_id, category_id),
+            category_name    = COALESCE(:category_name, category_name),
             deep_fetched_at  = :deep_fetched_at
         WHERE item_id = :item_id
         """,
@@ -210,6 +213,8 @@ def upsert_deep(conn: sqlite3.Connection, item_id: str, deep: dict[str, Any]) ->
             "quantity_sold":   deep.get("quantity_sold"),
             "end_time":        deep.get("end_time"),
             "condition_id":    deep.get("condition_id"),
+            "category_id":     deep.get("category_id"),
+            "category_name":   deep.get("category_name"),
             "deep_fetched_at": _now_iso(),
         },
     )

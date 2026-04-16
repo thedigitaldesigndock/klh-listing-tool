@@ -167,24 +167,57 @@ def _find_file_for_pair_key(directory: Path, pair_key: str) -> Optional[Path]:
     return None
 
 
-def _detect_orientation(image_path: Path) -> str:
+def _read_display_size(image_path: Path) -> tuple[int, int]:
     """
-    Inspect an image on disk and return "landscape" or "portrait" based
-    on pixel dimensions. Ties break landscape (matches ruler_composite).
-
-    Used by the /api/mockup endpoint to auto-fill orientation for
-    products with `orientation_lock: auto` (10x8 mount/frame) so the
-    compositor can pick templates/10x8-mount-land vs
-    templates/10x8-mount-port without Nicky having to set a flag.
+    Open an image on disk, apply its EXIF Orientation, and return the
+    (width, height) as it would appear in Finder. This is the single
+    source of truth for "what shape is this scan?" — used by both the
+    orientation and photo-size detectors below.
     """
     from PIL import Image, ImageOps  # local import — already a compositor dep
-    # Honour EXIF Orientation: a scan can be stored with swapped width/
-    # height and an orientation tag that tells viewers to rotate it. We
-    # want to match what Finder shows, not the raw pixel dimensions.
     with Image.open(image_path) as raw:
         im = ImageOps.exif_transpose(raw)
-        w, h = im.size
+        return im.size
+
+
+def _detect_orientation(image_path: Path) -> str:
+    """
+    Return "landscape" or "portrait" from pixel dimensions.
+    Ties break landscape (matches ruler_composite).
+
+    Used for products with `orientation_lock: auto` (10x8 mount/frame,
+    16x12 CDEF) so pick_template_id can resolve to the correct -land /
+    -port variant without Nicky having to flag it.
+    """
+    w, h = _read_display_size(image_path)
     return "landscape" if w >= h else "portrait"
+
+
+def _detect_photo_size(image_path: Path) -> str:
+    """
+    Return "10x8" or "12x8" based on the scan's long-side / short-side
+    aspect ratio.
+
+    10x8 photos are 10÷8 = 1.25, 12x8 photos are 12÷8 = 1.5. Those two
+    ratios are far apart (20% difference) so a midpoint threshold at
+    1.375 gives robust classification even for slightly cropped or
+    padded scans.
+
+    Used for 16x12 CDEF (main_size: auto) which routes to one of four
+    templates based on photo_size × orientation:
+
+        12x8 landscape → 16x12-c-mount/frame
+        12x8 portrait  → 16x12-d-mount/frame
+        10x8 landscape → 16x12-e-mount/frame
+        10x8 portrait  → 16x12-f-mount/frame
+    """
+    w, h = _read_display_size(image_path)
+    long_side  = max(w, h)
+    short_side = min(w, h)
+    ratio = long_side / short_side if short_side else 1.0
+    # Midpoint between 1.25 (10x8) and 1.5 (12x8) — anything below this
+    # is closer to 10x8, anything above is closer to 12x8.
+    return "10x8" if ratio < 1.375 else "12x8"
 
 
 # --------------------------------------------------------------------------- #
@@ -502,14 +535,18 @@ def register_workflow_routes(app: FastAPI) -> None:
                 },
             })
 
-        # Resolve template_id (handles 10x8 orientation flip).
+        # Resolve template_id.
         #
-        # If the product is orientation-aware (orientation_lock: auto —
-        # currently 10x8 mount/frame) and the frontend didn't send one,
-        # auto-detect from the scan's pixel dimensions. Without this,
-        # pick_template_id falls back to product.template_id (e.g.
-        # "10x8-mount") which has no folder on disk — only "-land" and
-        # "-port" exist — so compositor.load_spec 404s.
+        # Two auto-detect hooks, both driven by the product's config:
+        #   * orientation_lock: auto → detect landscape/portrait from
+        #     the scan's displayed dimensions (10x8, 16x12 CDEF).
+        #   * main_size: auto        → detect 10x8 vs 12x8 from the
+        #     scan's long/short aspect ratio (16x12 CDEF).
+        #
+        # Without these, pick_template_id falls back to the product's
+        # default template_id (e.g. "10x8-mount" or "16x12-c-mount")
+        # which may not be a real folder on disk, so compositor.load_spec
+        # 404s and Nicky sees no mockup.
         orientation = req.orientation
         if orientation is None and product.raw.get("orientation_lock") == "auto":
             try:
@@ -520,11 +557,22 @@ def register_workflow_routes(app: FastAPI) -> None:
                     detail=f"could not read {picture_path} to detect orientation: {e}",
                 )
 
+        photo_size: Optional[str] = None
+        if product.raw.get("main_size") == "auto":
+            try:
+                photo_size = _detect_photo_size(picture_path)
+            except Exception as e:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"could not read {picture_path} to detect photo size: {e}",
+                )
+
         try:
             template_id = pp.pick_template_id(
                 bundle,
                 req.product_key,
                 orientation=orientation,
+                photo_size=photo_size,
                 variant=req.variant,
             )
         except pp.PresetsError as e:

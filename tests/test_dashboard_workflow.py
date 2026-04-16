@@ -345,6 +345,68 @@ def test_mockup_10x8_auto_detects_orientation(
     assert captured["template_id"] == expected_template
 
 
+@pytest.mark.parametrize(
+    "pixel_size, expected_template",
+    [
+        # 10x8 = 1.25 aspect, 12x8 = 1.5 aspect. Threshold is 1.375.
+        ((50, 40),  "16x12-e-mount"),   # 1.25  landscape 10x8 → E
+        ((40, 50),  "16x12-f-mount"),   # 1.25  portrait  10x8 → F
+        ((60, 40),  "16x12-c-mount"),   # 1.5   landscape 12x8 → C
+        ((40, 60),  "16x12-d-mount"),   # 1.5   portrait  12x8 → D
+    ],
+)
+def test_mockup_16x12_cdef_auto_routes_by_photo_size_and_orientation(
+    client, klh_config, monkeypatch, pixel_size, expected_template,
+):
+    """
+    16x12 CDEF has main_size: auto + orientation_lock: auto. From the
+    scan's dimensions alone, /api/mockup must pick one of four
+    templates via the compound variant key "{photo_size}_{orientation}":
+
+        12x8 landscape → 16x12-c-mount
+        12x8 portrait  → 16x12-d-mount
+        10x8 landscape → 16x12-e-mount
+        10x8 portrait  → 16x12-f-mount
+    """
+    from PIL import Image
+
+    stem = "Test Player_England_Football"
+    _write_oriented_jpg(klh_config["picture_dir"] / f"{stem}.jpg", pixel_size)
+    # No card — 16x12 CDEF is a one-photo layout, needs_secondary: null.
+
+    captured = {}
+
+    class _FakeSpec:
+        output_format = "jpg"
+        output_quality = 85
+        slots = {"picture": None}
+
+    def fake_load_spec(template_id, **kw):
+        captured["template_id"] = template_id
+        spec = _FakeSpec()
+        spec.id = template_id
+        return spec
+
+    def fake_composite(spec, *, picture_path, card_path, name, secondary_path=None):
+        return Image.new("RGB", (10, 10), (255, 0, 0))
+
+    def fake_save_mockup(img, out_path, spec):
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        img.save(out_path, "JPEG", quality=80)
+
+    monkeypatch.setattr(pcomp, "load_spec", fake_load_spec)
+    monkeypatch.setattr(pcomp, "composite", fake_composite)
+    monkeypatch.setattr(pcomp, "save_mockup", fake_save_mockup)
+
+    r = client.post(
+        "/api/mockup",
+        json={"product_key": "16x12_mount_cdef", "pair_key": stem},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["template_id"] == expected_template
+    assert captured["template_id"] == expected_template
+
+
 def test_mockup_image_serves_back(client, klh_config):
     """A JPG sitting in mockups_dir is served by /api/mockup-image/<name>."""
     out = _write_jpg(klh_config["mockups_dir"] / "demo.jpg", color=(10, 20, 30))

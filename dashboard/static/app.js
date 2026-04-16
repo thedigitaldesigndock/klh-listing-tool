@@ -378,19 +378,38 @@
       message:      "",
     }));
 
-    // Summary line
+    // Summary line.
+    //
+    // For products that don't need a TWO entry (10x8 mount/frame, 16x12
+    // CDEF, photo-only, odd-size), ONE-side pictures without a TWO
+    // partner ARE the valid rows — they shouldn't be flagged as
+    // "unmatched". Show a friendly "N ready" instead, and don't count
+    // them as a problem.
     const parts = [];
-    parts.push(`${totals.matched ?? matched.length} matched`);
-    if ((totals.unmatched_pictures ?? 0) > 0) parts.push(`${totals.unmatched_pictures} unmatched picture(s)`);
-    if ((totals.unmatched_cards ?? 0)    > 0) parts.push(`${totals.unmatched_cards} unmatched card(s)`);
-    if ((totals.needs_normalize ?? 0)    > 0) parts.push(`${totals.needs_normalize} need normalize`);
-    if ((totals.unknown_format ?? 0)     > 0) parts.push(`${totals.unknown_format} unknown format`);
-    setScanStatus(parts.join(" · ") || "No files found.",
-                  report.ok ? "ok" : "warn");
+    if (needsSecondary) {
+      parts.push(`${totals.matched ?? matched.length} matched`);
+      if ((totals.unmatched_pictures ?? 0) > 0) parts.push(`${totals.unmatched_pictures} unmatched picture(s)`);
+      if ((totals.unmatched_cards ?? 0)    > 0) parts.push(`${totals.unmatched_cards} unmatched card(s)`);
+    } else {
+      parts.push(`${state.rows.length} ready`);
+      if ((totals.unmatched_cards ?? 0) > 0) parts.push(`${totals.unmatched_cards} stray card(s) in TWO`);
+    }
+    if ((totals.needs_normalize ?? 0) > 0) parts.push(`${totals.needs_normalize} need normalize`);
+    if ((totals.unknown_format ?? 0)  > 0) parts.push(`${totals.unknown_format} unknown format`);
+
+    // "ok" banner for no-secondary products when rows exist and nothing
+    // is genuinely broken — otherwise fall back to the report flag.
+    const hasRealProblem =
+      (totals.needs_normalize ?? 0) > 0 ||
+      (totals.unknown_format ?? 0)  > 0 ||
+      (needsSecondary && !report.ok);
+    const tone = hasRealProblem ? "warn" :
+                 (state.rows.length > 0 ? "ok" : (report.ok ? "ok" : "warn"));
+    setScanStatus(parts.join(" · ") || "No files found.", tone);
 
     renderRows();
     renderBulkPriceChips();
-    renderUnmatched(report);
+    renderUnmatched(report, needsSecondary);
     $renderAllBtn.disabled  = state.rows.length === 0;
     $downloadAllBtn.disabled = state.rows.length === 0;
     $listAllBtn.disabled    = state.rows.length === 0;
@@ -727,13 +746,17 @@
     }
   }
 
-  function renderUnmatched(report) {
+  function renderUnmatched(report, needsSecondary = true) {
+    // For no-secondary products, ONE-side pictures become valid rows —
+    // don't flag them as "unmatched / needs attention" again.
     const buckets = [
-      { label: "Unmatched pictures", list: report.unmatched_pictures },
+      needsSecondary
+        ? { label: "Unmatched pictures", list: report.unmatched_pictures }
+        : null,
       { label: "Unmatched cards",    list: report.unmatched_cards },
       { label: "Needs normalize",    list: report.needs_normalize },
       { label: "Unknown format",     list: report.unknown_format },
-    ].filter(b => (b.list || []).length > 0);
+    ].filter(b => b && (b.list || []).length > 0);
 
     if (!buckets.length) {
       $unmatched.classList.add("hidden");

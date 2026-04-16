@@ -65,6 +65,9 @@
   const $lightbox       = document.getElementById("lightbox");
   const $lightboxImg    = document.getElementById("lightbox-img");
   const $lightboxClose  = document.getElementById("lightbox-close");
+  const $lightboxPrev   = document.getElementById("lightbox-prev");
+  const $lightboxNext   = document.getElementById("lightbox-next");
+  const $lightboxCap    = document.getElementById("lightbox-caption");
 
   const $bulkPriceInput = document.getElementById("bulk-price-input");
   const $bulkPriceApply = document.getElementById("bulk-price-apply");
@@ -106,13 +109,19 @@
 
     // Lightbox: click outside the image, the close button, or press
     // Esc to dismiss. Clicking the image itself does NOT close so you
-    // can still inspect detail.
+    // can still inspect detail. Left/right arrows (and prev/next
+    // buttons) step through the rows that have a mockup rendered.
     $lightbox.addEventListener("click", (e) => {
       if (e.target === $lightbox || e.target === $lightboxClose) closeLightbox();
     });
     $lightboxClose.addEventListener("click", closeLightbox);
+    $lightboxPrev.addEventListener("click", (e) => { e.stopPropagation(); stepLightbox(-1); });
+    $lightboxNext.addEventListener("click", (e) => { e.stopPropagation(); stepLightbox(+1); });
     document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape" && !$lightbox.classList.contains("hidden")) closeLightbox();
+      if ($lightbox.classList.contains("hidden")) return;
+      if (e.key === "Escape")      closeLightbox();
+      else if (e.key === "ArrowLeft")  stepLightbox(-1);
+      else if (e.key === "ArrowRight") stepLightbox(+1);
     });
 
     Promise.all([fetchConfig(), fetchCatalog()])
@@ -483,7 +492,7 @@
       img.src = row.mockup_url;
       img.alt = "mockup preview — click to enlarge";
       img.title = "Click to enlarge";
-      img.addEventListener("click", () => openLightbox(row.mockup_url));
+      img.addEventListener("click", () => openLightbox(i));
       tdThumb.appendChild(img);
     } else {
       tdThumb.innerHTML = `<div class="row-thumb placeholder">—</div>`;
@@ -669,7 +678,7 @@
       btnView.className = "btn btn-small";
       btnView.textContent = "View";
       btnView.title = "Open full-size mockup";
-      btnView.addEventListener("click", () => openLightbox(row.mockup_url));
+      btnView.addEventListener("click", () => openLightbox(i));
       actionsWrap.appendChild(btnView);
 
       // In mockup-only mode, offer a download link instead of verify/list.
@@ -1072,15 +1081,61 @@
     $scanStatus.className = `scan-status ${kind || "muted"}`;
   }
 
-  function openLightbox(url) {
-    if (!url) return;
-    $lightboxImg.src = url;
+  // Current row index inside the lightbox, -1 when closed. Tracked in
+  // module scope (not React-ish state) so the keyboard handler can
+  // read it without awkward closures.
+  let _lightboxIdx = -1;
+
+  function _indicesWithMockup() {
+    const out = [];
+    for (let i = 0; i < state.rows.length; i++) {
+      if (state.rows[i]?.mockup_url) out.push(i);
+    }
+    return out;
+  }
+
+  function openLightbox(idx) {
+    // Belt-and-braces: only open on a row that has a rendered mockup.
+    const row = state.rows[idx];
+    if (!row || !row.mockup_url) return;
+    _lightboxIdx = idx;
+    _paintLightbox();
     $lightbox.classList.remove("hidden");
+  }
+
+  function stepLightbox(delta) {
+    // Walk the ordered list of row-indices that have a mockup, wrapping
+    // at both ends so the arrows never dead-end.
+    const available = _indicesWithMockup();
+    if (available.length <= 1) return;
+    const pos = available.indexOf(_lightboxIdx);
+    const nextPos = (pos + delta + available.length) % available.length;
+    _lightboxIdx = available[nextPos];
+    _paintLightbox();
+  }
+
+  function _paintLightbox() {
+    const row = state.rows[_lightboxIdx];
+    if (!row) return;
+    $lightboxImg.src = row.mockup_url;
+    const name  = row?.parsed?.name || row?.pair_key || "";
+    const available = _indicesWithMockup();
+    const pos = available.indexOf(_lightboxIdx);
+    const posLabel = available.length > 1
+      ? `${pos + 1} / ${available.length}`
+      : "";
+    $lightboxCap.textContent = [name, posLabel].filter(Boolean).join("  ·  ");
+    // Hide arrows when there's only one mockup to look at.
+    const solo = available.length <= 1;
+    $lightboxPrev.style.display = solo ? "none" : "";
+    $lightboxNext.style.display = solo ? "none" : "";
   }
 
   function closeLightbox() {
     $lightbox.classList.add("hidden");
     $lightboxImg.src = "";
+    $lightboxCap.textContent = "";
+    _lightboxIdx = -1;
   }
 
   function showConfigBanner(cfg) {

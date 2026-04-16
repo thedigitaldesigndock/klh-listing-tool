@@ -60,7 +60,9 @@ def _load_env():
             "Copy it from the initial oauth_setup.py run."
         )
     env = {}
-    with open(ENV_FILE) as f:
+    # Force UTF-8 — Windows default (cp1252) breaks on any non-ASCII
+    # character in credentials or comments.
+    with open(ENV_FILE, encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if not line or line.startswith("#") or "=" not in line:
@@ -76,12 +78,12 @@ def _load_tokens():
             f"tokens.json not found at {TOKEN_FILE}. "
             "Run oauth_setup.py to do the initial user consent flow."
         )
-    with open(TOKEN_FILE) as f:
+    with open(TOKEN_FILE, encoding="utf-8") as f:
         return json.load(f)
 
 
 def _save_tokens(tokens):
-    with open(TOKEN_FILE, "w") as f:
+    with open(TOKEN_FILE, "w", encoding="utf-8") as f:
         json.dump(tokens, f, indent=2)
     # Re-apply restrictive perms in case the file was recreated.
     try:

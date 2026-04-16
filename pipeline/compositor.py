@@ -81,7 +81,7 @@ def load_spec(template_id: str, templates_dir: Path = TEMPLATES_DIR) -> Template
             f"Run `python scripts/extract_template.py <psd>` to create it."
         )
 
-    with open(spec_path) as f:
+    with open(spec_path, encoding="utf-8") as f:
         raw = yaml.safe_load(f)
 
     slots = {}

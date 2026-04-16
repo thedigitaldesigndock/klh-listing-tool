@@ -59,7 +59,7 @@ def load(config_path: Optional[Path] = None) -> Config:
             "Create it — see klh-listing-tool/README.md for the format."
         )
 
-    with open(config_path) as f:
+    with open(config_path, encoding="utf-8") as f:
         raw = yaml.safe_load(f) or {}
 
     paths_raw = raw.get("paths", {})

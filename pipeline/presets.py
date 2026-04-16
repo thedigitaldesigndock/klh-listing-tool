@@ -132,9 +132,12 @@ class PresetsBundle:
 # --------------------------------------------------------------------------- #
 
 def _read_yaml(path: Path) -> dict:
+    # Force UTF-8 on read — on Windows, open() defaults to the system
+    # code page (cp1252), which chokes on £, em-dashes, curly quotes,
+    # etc. in the product YAMLs. Our files are UTF-8 on disk.
     if not path.exists():
         raise PresetsError(f"Missing presets file: {path}")
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         data = yaml.safe_load(f)
     if not isinstance(data, dict):
         raise PresetsError(f"Expected a mapping at the top level of {path}")
@@ -145,7 +148,7 @@ def _read_yaml_optional(path: Path) -> dict:
     """Same as _read_yaml but returns {} if the file is missing."""
     if not path.exists():
         return {}
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         data = yaml.safe_load(f)
     if data is None:
         return {}

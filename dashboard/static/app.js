@@ -820,7 +820,11 @@
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.detail || `POST /api/mockup → ${res.status}`);
-      row.mockup_url   = data.mockup_url || data.mockup_path || null;
+      // mockup_url is always an HTTP route (/api/mockup-image/... for
+      // rendered templates, /api/scan-image/... for photo-only products).
+      // mockup_path is the raw filesystem path — kept for debugging only,
+      // NOT used as an <img src> because browsers can't load file://.
+      row.mockup_url   = data.mockup_url || null;
       row.mockup_path  = data.mockup_path;
       row.is_raw_photo = !!data.is_raw_photo;
       if (row.is_raw_photo) {

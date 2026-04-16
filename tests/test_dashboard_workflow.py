@@ -185,7 +185,8 @@ def test_match_500_when_config_missing(tmp_path, monkeypatch):
 def test_mockup_photo_only_returns_raw(client, klh_config):
     """
     photo_10x8 has template_id=None; the endpoint should return
-    mockup_url=None and is_raw_photo=True, pointing at the scan on disk.
+    is_raw_photo=True and a mockup_url pointing at /api/scan-image/<file>
+    so the browser can render the raw scan as the row preview.
     """
     stem = "Mel C_Spice Girls_Music"
     pic_path = _write_jpg(klh_config["picture_dir"] / f"{stem}.jpg")
@@ -198,10 +199,29 @@ def test_mockup_photo_only_returns_raw(client, klh_config):
     data = r.json()
     assert data["ok"] is True
     assert data["is_raw_photo"] is True
-    assert data["mockup_url"] is None
+    assert data["mockup_url"] == f"/api/scan-image/{pic_path.name}"
     assert data["mockup_path"] == str(pic_path)
     assert data["template_id"] is None
     assert data["parsed"]["name"] == "Mel C"
+
+    # And that URL must actually serve the file back with an image type.
+    r2 = client.get(data["mockup_url"])
+    assert r2.status_code == 200
+    assert r2.headers["content-type"].startswith("image/")
+    assert r2.content == pic_path.read_bytes()
+
+
+def test_scan_image_rejects_path_traversal(client, klh_config):
+    """Traversal or absolute paths in the filename must be rejected."""
+    for bad in ("..%2Fescape.jpg", ".hidden", "sub/escape.jpg"):
+        r = client.get(f"/api/scan-image/{bad}")
+        assert r.status_code in (400, 404), f"{bad!r} allowed through"
+
+
+def test_scan_image_404_for_missing_file(client, klh_config):
+    """Valid-looking filename that isn't on disk → 404."""
+    r = client.get("/api/scan-image/does_not_exist.jpg")
+    assert r.status_code == 404
 
 
 def test_mockup_photo_only_unknown_pair_key_404(client, klh_config):

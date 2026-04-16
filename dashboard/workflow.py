@@ -518,13 +518,15 @@ def register_workflow_routes(app: FastAPI) -> None:
             })
 
         # Photo-only products (6x4, 10x8, 12x8): no compositor work.
-        # Return ok with no URL — the frontend knows to use the raw scan.
+        # Return a URL that points at the raw scan via /api/scan-image so
+        # the browser can render it as a preview <img>. The lister also
+        # uses the same raw scan at submit time (see /api/list below).
         if product.template_id is None:
             return JSONResponse({
                 "ok":            True,
                 "product_key":   req.product_key,
                 "template_id":   None,
-                "mockup_url":    None,
+                "mockup_url":    f"/api/scan-image/{picture_path.name}",
                 "mockup_path":   str(picture_path),
                 "is_raw_photo":  True,
                 "parsed": {
@@ -653,6 +655,45 @@ def register_workflow_routes(app: FastAPI) -> None:
         if mockups_dir.resolve() not in resolved.parents:
             raise HTTPException(status_code=400, detail="invalid filename")
         return FileResponse(resolved, media_type="image/jpeg")
+
+    @app.get("/api/scan-image/{filename}")
+    def api_scan_image(filename: str) -> FileResponse:
+        """
+        Serve a raw scan from picture_dir back to the browser.
+
+        Used by photo-only products (6x4, 10x8, 12x8) as their preview
+        image, since there's no mockup render step — the raw scan IS the
+        listing image. Locked to picture_dir with the same traversal
+        checks as /api/mockup-image/. Content type is inferred from the
+        file extension so both .jpg and .png scans work.
+        """
+        if "/" in filename or "\\" in filename or filename.startswith("."):
+            raise HTTPException(status_code=400, detail="invalid filename")
+
+        try:
+            cfg = pcfg.load()
+        except pcfg.ConfigError as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+        picture_dir = cfg.paths.picture_dir
+        target = picture_dir / filename
+        try:
+            resolved = target.resolve(strict=True)
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail="scan not found")
+        if picture_dir.resolve() not in resolved.parents:
+            raise HTTPException(status_code=400, detail="invalid filename")
+
+        # Infer a sensible content type — matcher.IMAGE_EXTS covers the
+        # handful of extensions we actually scan in, so this is exhaustive.
+        ext = resolved.suffix.lower()
+        media_type = {
+            ".jpg":  "image/jpeg",
+            ".jpeg": "image/jpeg",
+            ".png":  "image/png",
+            ".webp": "image/webp",
+        }.get(ext, "application/octet-stream")
+        return FileResponse(resolved, media_type=media_type)
 
     @app.post("/api/download-mockups")
     def api_download_mockups(req: DownloadMockupsRequest) -> StreamingResponse:

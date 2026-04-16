@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Optional
 
 import yaml
-from PIL import Image
+from PIL import Image, ImageOps
 
 from pipeline import config
 from pipeline.text_fit import draw_text_in_box
@@ -177,7 +177,11 @@ def _paste_slot(
         bg = Image.new("RGB", (box_w, box_h), slot.background)
         canvas.paste(bg, (x1, y1))
 
-    src = Image.open(src_path).convert("RGB")
+    # Honour the EXIF Orientation tag so scans from phones / cameras land
+    # in the mockup the same way Finder / the browser shows them on disk.
+    # Without this PIL returns the raw pixels and a scan saved as
+    # "rotated 180°" ends up upside down in the template.
+    src = ImageOps.exif_transpose(Image.open(src_path)).convert("RGB")
 
     if slot.scale_mode == "fit_cover":
         placed = _fit_cover(src, box_w, box_h)

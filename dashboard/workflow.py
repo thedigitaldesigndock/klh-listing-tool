@@ -177,8 +177,12 @@ def _detect_orientation(image_path: Path) -> str:
     compositor can pick templates/10x8-mount-land vs
     templates/10x8-mount-port without Nicky having to set a flag.
     """
-    from PIL import Image  # local import — PIL is already a compositor dep
-    with Image.open(image_path) as im:
+    from PIL import Image, ImageOps  # local import — already a compositor dep
+    # Honour EXIF Orientation: a scan can be stored with swapped width/
+    # height and an orientation tag that tells viewers to rotate it. We
+    # want to match what Finder shows, not the raw pixel dimensions.
+    with Image.open(image_path) as raw:
+        im = ImageOps.exif_transpose(raw)
         w, h = im.size
     return "landscape" if w >= h else "portrait"
 

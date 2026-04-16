@@ -36,7 +36,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from PIL import Image
+from PIL import Image, ImageOps
 
 TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
 RULERS_DIR = TEMPLATES_DIR / "rulers"
@@ -245,7 +245,10 @@ def composite_on_ruler(
     If the scan is bigger than the ruler (shouldn't happen if the
     picker did its job), we scale it down proportionally to fit.
     """
-    scan = Image.open(scan_path).convert("RGB")
+    # Apply EXIF Orientation so the content sits on the ruler the same
+    # way it displays in Finder. Scans saved rotated otherwise land
+    # upside-down or sideways on the ruler sheet.
+    scan = ImageOps.exif_transpose(Image.open(scan_path)).convert("RGB")
     bbox = detect_content_bbox(scan)
     content = scan.crop(bbox)
 
@@ -294,9 +297,14 @@ def render_odd_size_mockup(
     Returns the finished image plus the ruler that was chosen (so the
     caller can log it / include it in the mockup filename).
     """
-    scan = Image.open(scan_path)
-    w_in, h_in = content_size_inches(scan)
-    scan.close()
+    # EXIF-rotated scan so content_size_inches sees the displayed
+    # dimensions, not the raw-pixel ones.
+    raw = Image.open(scan_path)
+    try:
+        scan = ImageOps.exif_transpose(raw)
+        w_in, h_in = content_size_inches(scan)
+    finally:
+        raw.close()
 
     rulers = load_rulers(rulers_dir)
     ruler = pick_ruler(w_in, h_in, rulers)

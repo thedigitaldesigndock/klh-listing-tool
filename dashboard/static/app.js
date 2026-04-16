@@ -44,6 +44,7 @@
 
   const $workflow       = document.getElementById("workflow");
   const $backBtn        = document.getElementById("back-btn");
+  const $homeBtn        = document.getElementById("home-btn");
   const $productLabel   = document.getElementById("workflow-product-label");
   const $productKeyEl   = document.getElementById("workflow-product-key");
   const $defaultPrice   = document.getElementById("workflow-default-price");
@@ -102,6 +103,7 @@
       $listAllScheduledBtn.addEventListener("click", onListAllScheduledClick);
     }
     $backBtn.addEventListener("click", onBackClick);
+    if ($homeBtn) $homeBtn.addEventListener("click", onHomeClick);
     $bulkPriceApply.addEventListener("click", onBulkPriceApply);
     $bulkPriceInput.addEventListener("keydown", (e) => {
       if (e.key === "Enter") onBulkPriceApply();
@@ -320,6 +322,15 @@
     $catalog.classList.remove("hidden");
     $backBtn.classList.add("hidden");
     $catalog.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function onHomeClick() {
+    // "Home" = the top of the page with the catalog on screen. Reuses
+    // the Back button's reveal logic so catalog + workflow stay in
+    // sync, then scrolls to the very top so the header is visible.
+    $catalog.classList.remove("hidden");
+    $backBtn.classList.add("hidden");
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   // ---- Workflow: scan --------------------------------------------- //

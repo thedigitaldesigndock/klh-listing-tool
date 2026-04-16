@@ -52,6 +52,12 @@ html, body {
   gap: 16px;
 }
 
+.brand-title-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
 .brand h1 {
   margin: 0;
   font-size: 22px;
@@ -64,6 +70,16 @@ html, body {
   color: var(--text-muted);
   letter-spacing: 0.4px;
   text-transform: uppercase;
+}
+
+/* The Home button lives next to the app title. Keep it small and
+   unobtrusive but tap-friendly — it's the quickest way for Kim /
+   Nicky to reset to the catalog from deep in a long row list. */
+.btn-home {
+  padding: 4px 12px;
+  font-size: 13px;
+  line-height: 1.4;
+  border-radius: 14px;
 }
 
 .header-controls {

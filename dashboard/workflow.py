@@ -167,6 +167,22 @@ def _find_file_for_pair_key(directory: Path, pair_key: str) -> Optional[Path]:
     return None
 
 
+def _detect_orientation(image_path: Path) -> str:
+    """
+    Inspect an image on disk and return "landscape" or "portrait" based
+    on pixel dimensions. Ties break landscape (matches ruler_composite).
+
+    Used by the /api/mockup endpoint to auto-fill orientation for
+    products with `orientation_lock: auto` (10x8 mount/frame) so the
+    compositor can pick templates/10x8-mount-land vs
+    templates/10x8-mount-port without Nicky having to set a flag.
+    """
+    from PIL import Image  # local import — PIL is already a compositor dep
+    with Image.open(image_path) as im:
+        w, h = im.size
+    return "landscape" if w >= h else "portrait"
+
+
 # --------------------------------------------------------------------------- #
 # Extra listing images
 # --------------------------------------------------------------------------- #
@@ -483,11 +499,28 @@ def register_workflow_routes(app: FastAPI) -> None:
             })
 
         # Resolve template_id (handles 10x8 orientation flip).
+        #
+        # If the product is orientation-aware (orientation_lock: auto —
+        # currently 10x8 mount/frame) and the frontend didn't send one,
+        # auto-detect from the scan's pixel dimensions. Without this,
+        # pick_template_id falls back to product.template_id (e.g.
+        # "10x8-mount") which has no folder on disk — only "-land" and
+        # "-port" exist — so compositor.load_spec 404s.
+        orientation = req.orientation
+        if orientation is None and product.raw.get("orientation_lock") == "auto":
+            try:
+                orientation = _detect_orientation(picture_path)
+            except Exception as e:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"could not read {picture_path} to detect orientation: {e}",
+                )
+
         try:
             template_id = pp.pick_template_id(
                 bundle,
                 req.product_key,
-                orientation=req.orientation,
+                orientation=orientation,
                 variant=req.variant,
             )
         except pp.PresetsError as e:

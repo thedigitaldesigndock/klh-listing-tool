@@ -280,6 +280,71 @@ def test_mockup_templated_product_uses_compositor(client, klh_config, monkeypatc
     assert calls["card"] is not None
 
 
+def _write_oriented_jpg(path: Path, size) -> Path:
+    """Write a JPG with explicit dimensions so orientation is testable."""
+    from PIL import Image
+    img = Image.new("RGB", size, color=(200, 200, 200))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    img.save(path, "JPEG", quality=80)
+    return path
+
+
+@pytest.mark.parametrize(
+    "pixel_size, expected_template",
+    [
+        ((40, 30), "10x8-mount-land"),   # wider than tall → landscape
+        ((30, 40), "10x8-mount-port"),   # taller than wide → portrait
+    ],
+)
+def test_mockup_10x8_auto_detects_orientation(
+    client, klh_config, monkeypatch, pixel_size, expected_template,
+):
+    """
+    10x8 mount has orientation_lock: auto. When the frontend doesn't
+    send req.orientation, /api/mockup must read the scan's dimensions
+    and pick 10x8-mount-land vs 10x8-mount-port so compositor.load_spec
+    finds a real template folder. Without this, pick_template_id falls
+    back to "10x8-mount" (no such folder) and the endpoint 404s.
+    """
+    from PIL import Image
+
+    stem = "Steve McQueen_Bullitt_Film"
+    _write_oriented_jpg(klh_config["picture_dir"] / f"{stem}.jpg", pixel_size)
+    # 10x8 has no card — deliberately leave card_dir empty.
+
+    captured = {}
+
+    class _FakeSpec:
+        output_format = "jpg"
+        output_quality = 85
+        slots = {"picture": None}
+
+    def fake_load_spec(template_id, **kw):
+        captured["template_id"] = template_id
+        spec = _FakeSpec()
+        spec.id = template_id
+        return spec
+
+    def fake_composite(spec, *, picture_path, card_path, name, secondary_path=None):
+        return Image.new("RGB", (10, 10), (0, 0, 255))
+
+    def fake_save_mockup(img, out_path, spec):
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        img.save(out_path, "JPEG", quality=80)
+
+    monkeypatch.setattr(pcomp, "load_spec", fake_load_spec)
+    monkeypatch.setattr(pcomp, "composite", fake_composite)
+    monkeypatch.setattr(pcomp, "save_mockup", fake_save_mockup)
+
+    r = client.post(
+        "/api/mockup",
+        json={"product_key": "10x8_mount", "pair_key": stem},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["template_id"] == expected_template
+    assert captured["template_id"] == expected_template
+
+
 def test_mockup_image_serves_back(client, klh_config):
     """A JPG sitting in mockups_dir is served by /api/mockup-image/<name>."""
     out = _write_jpg(klh_config["mockups_dir"] / "demo.jpg", color=(10, 20, 30))

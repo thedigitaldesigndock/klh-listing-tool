@@ -14,10 +14,10 @@ Same steps on each machine. Budget ~20 minutes per machine.
 2. **Git for Windows** — <https://git-scm.com/download/win>. Accept all
    defaults. This gives us `git` on PATH for the auto-pull-on-launch.
 
-3. **Google Drive for desktop** — <https://www.google.com/drive/download/>.
-   Sign in with the account that has `My Drive > KLH > inbound` shared.
-   Verify Drive mounts at `G:\` (it usually does — if it lands on a
-   different letter, edit `config.yaml` after setup).
+   Kim and Nicky each have their own local `ONE/` and `TWO/` scan folders
+   on their desktop and list independently — no shared inbox. `setup.bat`
+   creates the folders; they just drop scans in. No Google Drive needed
+   for the listing workflow.
 
 ---
 
@@ -40,8 +40,15 @@ install\setup.bat
 - write `C:\Users\<user>\.klh\config.yaml` (template with Windows paths)
 - write `C:\Users\<user>\.klh\.env` (empty — you fill it in next)
 - create `C:\KLH\data\` with the working subdirs
+- create `%USERPROFILE%\Desktop\ONE` and `%USERPROFILE%\Desktop\TWO`
+  as the local scan-drop folders
 
 When it finishes it'll tell you to fill in the `.env` and copy tokens.
+
+> The config template assumes the Windows username is **Kim**. If it's
+> something different, open `%USERPROFILE%\.klh\config.yaml` in Notepad
+> and change `C:/Users/Kim/Desktop/ONE` and `.../TWO` to match the
+> actual username.
 
 ---
 
@@ -83,10 +90,12 @@ Close the cmd window to stop the server.
 ## Verify it works
 
 1. Double-click the shortcut. Browser opens to the dashboard.
-2. In `Nicky's inbox` panel on the dashboard, check that files from
-   `G:\My Drive\KLH\inbound\` show up.
-3. Pick any file, run through compose → list (against sandbox if
-   you set `EBAY_ENV=sandbox` in `.env`).
+2. Drop a scanned photo into `%USERPROFILE%\Desktop\ONE\` (and a card
+   into `TWO\` if that listing type needs one).
+3. Hit **Scan ONE / TWO** in the dashboard — the file should show up
+   as a row.
+4. Pick any product, render the mockup, step through compose → list
+   (against sandbox if you set `EBAY_ENV=sandbox` in `.env`).
 
 If `git pull` fails because Nicky/Kim can't auth to GitHub — the
 repo must be public, or you must configure a GitHub PAT in Git
@@ -123,5 +132,5 @@ only time re-setup is needed.
 | `git is not recognized` | Install Git for Windows. |
 | Browser opens to blank page | Server didn't bind in time. Hit refresh after 5 seconds. |
 | `config not found` on launch | `%USERPROFILE%\.klh\config.yaml` missing — rerun `setup.bat`. |
-| Drive folder empty in dashboard | Check GD mounted at `G:\`. If a different letter, edit `config.yaml`. |
+| Dashboard says "picture_dir missing" | Desktop has a non-standard name (OneDrive-redirected, different username, etc.). Open `%USERPROFILE%\.klh\config.yaml` in Notepad and fix the `picture_dir` / `card_dir` paths. |
 | `token refresh failed` | `tokens.json` is stale. Copy fresh copy from your Mac. |

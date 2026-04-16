@@ -79,6 +79,16 @@ if not exist "C:\KLH\data\mockups" mkdir "C:\KLH\data\mockups"
 if not exist "C:\KLH\data\listed" mkdir "C:\KLH\data\listed"
 echo Created C:\KLH\data\ working dirs.
 
+REM ONE/ and TWO/ live on the user's desktop — that's where Nicky/Kim
+REM drop scans. If %USERPROFILE%\Desktop doesn't resolve (OneDrive-
+REM redirected desktops can surprise us), fall through silently and
+REM leave it to the user to create by hand.
+if exist "%USERPROFILE%\Desktop" (
+    if not exist "%USERPROFILE%\Desktop\ONE" mkdir "%USERPROFILE%\Desktop\ONE"
+    if not exist "%USERPROFILE%\Desktop\TWO" mkdir "%USERPROFILE%\Desktop\TWO"
+    echo Created ONE\ and TWO\ on desktop.
+)
+
 echo.
 echo ============================================================
 echo  SETUP COMPLETE.

@@ -64,6 +64,66 @@ SIZE_PATTERNS = [
 # Listings where photo-size shouldn't be set — non-photo products.
 NON_PHOTO_RE = re.compile(r"\b(dvd|shirt|magazine)\b", re.I)
 
+# Signed-card detection. Cards don't have a single photo team — buyers know
+# they're buying a signature only, so multiple clubs in title are fine.
+# We skip Team IS derivation + title rebuild for cards.
+CARD_RE = re.compile(r"\bSigned\s+Card\b", re.I)
+
+# Lowercase tokens we know are title "furniture" — signing vocab, sizes,
+# product shape words, fillers. Used to detect unknown capitalised words
+# in a title (probably a typo'd team we'd be silently losing on rewrite).
+_TITLE_SAFE_TOKENS = {
+    # signing vocab
+    "hand", "signed", "autograph", "autographed", "signature", "auto",
+    # product nouns
+    "photo", "photos", "photograph", "photography", "picture", "image",
+    "print", "poster", "card", "cards", "memorabilia", "merch", "merchandise",
+    "gift", "present",
+    # shape
+    "framed", "frame", "mount", "mounted", "display", "displayed",
+    # COA variants
+    "coa", "+coa", "coa,", "w/coa", "+", "cert", "certificate", "loa",
+    "letter", "authentic", "authenticity", "certified", "genuine",
+    "original", "authentic.",
+    # size tokens (both forms)
+    "6x4", "10x8", "12x8", "16x12", "a4", "a3", "inch", "inches",
+    # joiners
+    "with", "&", "/", "-", "the",
+}
+
+
+def _has_unknown_capitalised_word(title: str, signer: str) -> bool:
+    """
+    Return True if title contains a capitalised word (or token) that isn't:
+      - part of the signer's name
+      - a size token (10x8 etc.)
+      - in _TITLE_SAFE_TOKENS
+      - a recognised team mention (handled upstream by _derive_team)
+
+    Used as a guard when _derive_team returns None: if we can't derive a
+    team BUT the title has mystery capitalised words (e.g. "Hotpur" typo
+    for "Hotspur"), skip the title rewrite to avoid silently dropping
+    information the buyer might be searching for.
+    """
+    signer_parts = {p.lower() for p in signer.split() if p}
+    # Tokenise on whitespace; strip trailing punctuation.
+    for raw in title.split():
+        tok = raw.strip(".,;:!?()[]").strip()
+        if not tok:
+            continue
+        low = tok.lower()
+        if low in signer_parts:
+            continue
+        if low in _TITLE_SAFE_TOKENS:
+            continue
+        # Ignore pure-numeric or size-like tokens we didn't catch above.
+        if re.fullmatch(r"\d+", tok) or re.fullmatch(r"\d+x\d+", tok, re.I):
+            continue
+        # Capitalised? (first letter upper, rest of word present)
+        if tok[0].isupper() and len(tok) > 1:
+            return True
+    return False
+
 # Multi-pack/job-lot listings like "7x Bryan Robson Hand Signed 6x4..." or
 # "Lot of 5 …" shouldn't be rewritten to singular form — those are genuinely
 # different products. Guard: title starts with "<digit(s)>x" or contains
@@ -163,37 +223,42 @@ def _derive_team(
 ) -> Optional[str]:
     """Derive Team from a title using the policy:
 
-    1. If any nation name appears in the title, use the FIRST nation found.
-       Nicky's legacy keyword-stuffed titles often read "Manchester United
-       England" — the old behaviour flipped to Man Utd, which is wrong for
-       England-photo listings. A signer has plenty of Man Utd listings
-       already; we don't need to cram Man Utd into the England ones.
+    1. If any nation name appears, use the FIRST nation found.
+       Nicky's keyword stuffing often appended nations ("Man Utd England")
+       but we've seen the photo is commonly the less-common/specific team
+       (England) rather than the primary one. Nation wins over club when
+       both appear.
 
-    2. Else find all club matches and return the LAST one that occurs in
-       the title. In the stuffing convention the primary/default club is
-       typed first ("Man Utd Middlesbrough …") and the specific/secondary
-       is appended — the appended one is usually the photo subject.
+    2. Else find the FIRST-occurring club in the title. The convention
+       when multiple clubs are listed ("Spurs Man Utd ...") is that the
+       first one is the photo subject — Nicky types the correct team for
+       the current photo first, then appends secondary teams as keyword
+       stuffing.
 
-    3. Else None (no team mention → Team unset in IS, title gets no team).
+    3. Else None.
     """
     # 1. Any nation wins over any club.
     for pat, target in NATION_PATTERNS:
         if pat.search(title):
             return target
 
-    # 2. Collect all club matches with their position, pick last.
-    last_match_pos = -1
-    last_target: Optional[str] = None
+    # 2. Collect all club matches with their position, pick first.
+    first_match_pos = None
+    first_target: Optional[str] = None
     for pat, target in club_patterns:
         m = pat.search(title)
-        if m is not None and m.start() > last_match_pos:
-            last_match_pos = m.start()
-            last_target = target
-    return last_target
+        if m is not None and (first_match_pos is None or m.start() < first_match_pos):
+            first_match_pos = m.start()
+            first_target = target
+    return first_target
 
 
 def _is_non_photo(title: str) -> bool:
     return bool(NON_PHOTO_RE.search(title))
+
+
+def _is_card(title: str) -> bool:
+    return bool(CARD_RE.search(title))
 
 
 def _propose_title(
@@ -216,17 +281,25 @@ def _propose_title(
     """
     if _is_non_photo(title):
         return None
+    if _is_card(title):
+        return None  # cards can legitimately carry multiple clubs in title
     if MULTIPACK_RE.match(title):
         return None  # "7x Bryan Robson…" — leave multi-pack titles alone
     size = _derive_size(title)
     if not size:
+        return None
+
+    team = _derive_team(title, club_patterns)
+    # Safeguard against typo'd team names (e.g. "Tottenham Hotpur" missing 's'):
+    # if we can't derive a team but the title has a capitalised word we don't
+    # recognise, skip the rewrite rather than silently drop the team text.
+    if team is None and _has_unknown_capitalised_word(title, signer):
         return None
     ptype = _derive_type(title)
     key = SIZE_TYPE_TO_PRODUCT_KEY.get((size, ptype))
     if not key:
         return None
 
-    team = _derive_team(title, club_patterns)
     try:
         return pp.render_title(bundle, key, signer, field1=team, category=category)
     except pp.PresetsError:
@@ -245,17 +318,22 @@ def _propose_specifics(
     merged: dict[str, str] = dict(current)
     merged.update(defaults)
     merged.update(signer_constants)
-    team = _derive_team(title, club_patterns)
-    if team:
-        merged["Team"] = team
-    if not _is_non_photo(title):
+
+    is_card = _is_card(title)
+    # Cards legitimately carry multiple clubs in the title — the buyer is
+    # buying the signature, not a team-specific photo. Don't force a
+    # single Team onto them; leave whatever was there (or absent) alone.
+    if not is_card:
+        team = _derive_team(title, club_patterns)
+        if team:
+            merged["Team"] = team
+
+    if not _is_non_photo(title) and not is_card:
         size = _derive_size(title)
         if size:
             merged["Size"] = size
-    merged["Type"] = _derive_type(title)
-    # Media Type only for photo-shaped products (Photo / Framed / Mounted).
-    # Non-photo Types (Shirt, DVD) are skipped so we don't falsely imply
-    # those listings are photographs.
+    merged["Type"] = "Card" if is_card else _derive_type(title)
+    # Media Type only for photo-shaped products. Cards, Shirts, DVDs skipped.
     if merged["Type"] in {"Photo", "Framed Photo Display", "Mounted Photo Display"}:
         merged["Media Type"] = "Photograph Photography Picture Image Original Print"
     return merged

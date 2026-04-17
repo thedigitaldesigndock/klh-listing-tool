@@ -22,6 +22,19 @@ if ! git pull --quiet; then
     read -r
 fi
 
+# If an older dashboard process is still holding port 8765 (from a
+# previous launch whose Terminal window got lost), kill it so the
+# new server can bind. Otherwise we'd fail with Errno 48.
+STALE_PIDS=$(lsof -ti tcp:8765 2>/dev/null)
+if [ -n "$STALE_PIDS" ]; then
+    echo "Killing stale dashboard process(es) holding port 8765: $STALE_PIDS"
+    kill $STALE_PIDS 2>/dev/null
+    sleep 1
+    # Force-kill anything that refused to die cleanly
+    STILL=$(lsof -ti tcp:8765 2>/dev/null)
+    [ -n "$STILL" ] && kill -9 $STILL 2>/dev/null
+fi
+
 # Open browser after a brief delay so the server has time to bind.
 # We pass --no-browser to the server so it doesn't also open a tab —
 # otherwise we'd get two duplicate localhost tabs on every launch.

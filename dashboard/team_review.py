@@ -60,7 +60,7 @@ def register_team_review_routes(app: FastAPI) -> None:
                 "Hand", "Mystery", "Limited", "Framed", "Authentic",
                 "The"}
         counts: Counter = Counter()
-        with audit_db.connect() as conn:
+        with audit_db.connect(readonly=True) as conn:
             for r in conn.execute(
                 "SELECT title FROM listings WHERE picture_url IS NOT NULL "
                 "AND picture_url != ''"
@@ -86,7 +86,7 @@ def register_team_review_routes(app: FastAPI) -> None:
         If team_filter is passed, only return listings whose current Team
         IS matches that filter (e.g. audit 'only show England-tagged').
         """
-        with audit_db.connect() as conn:
+        with audit_db.connect(readonly=True) as conn:
             rows = conn.execute(
                 "SELECT item_id, title, specifics_json, picture_url, "
                 "view_item_url, price_gbp, watch_count "

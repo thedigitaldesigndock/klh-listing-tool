@@ -285,11 +285,24 @@ def create_ad_group(
     _, _, headers = _request(
         "POST", f"{BASE}/ad_campaign/{campaign_id}/ad_group", body=body,
     )
-    loc = (headers or {}).get("Location", "") if headers else ""
+    # Location header is canonical; case-insensitive lookup since Python
+    # urllib sometimes normalises header case.
+    loc = ""
+    for k, v in (headers or {}).items():
+        if k.lower() == "location":
+            loc = v
+            break
     if loc:
         return loc.rstrip("/").rsplit("/", 1)[-1]
+
+    # Fallback: list existing ad_groups on this campaign and find by name.
+    _, list_body, _ = _request("GET", f"{BASE}/ad_campaign/{campaign_id}/ad_group")
+    for ag in (list_body or {}).get("adGroups") or []:
+        if ag.get("name") == name:
+            return str(ag["adGroupId"])
     raise MarketingError(
-        f"ad_group created under {campaign_id} but ad_group_id not in Location"
+        f"ad_group {name!r} created under {campaign_id} but id not recoverable "
+        f"(no Location header, not in ad_group list)"
     )
 
 

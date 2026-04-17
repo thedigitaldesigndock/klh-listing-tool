@@ -145,6 +145,10 @@ def main():
     from cli import audit_cmd
     audit_cmd.register(sub)
 
+    # Self-populating backlog — view / add / resolve improvement queue.
+    from cli import backlog_cmd
+    backlog_cmd.register(sub)
+
     # Phase 10 (POD): Two Fifteen integration — wired from cli.twofifteen_cmd
     from cli import twofifteen_cmd
     twofifteen_cmd.register(sub)

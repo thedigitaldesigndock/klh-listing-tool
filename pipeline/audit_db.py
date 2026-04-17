@@ -68,6 +68,38 @@ CREATE TABLE IF NOT EXISTS meta (
     key   TEXT PRIMARY KEY,
     value TEXT
 );
+
+-- optimization_log: date-stamped events for the catalogue-improvement
+-- project (IS rollouts, category fixes, etc.). Append-only — never edit
+-- past rows. Used to compute time-on-task and before/after deltas.
+CREATE TABLE IF NOT EXISTS optimization_log (
+    event       TEXT NOT NULL,
+    event_at    TEXT NOT NULL,
+    details     TEXT
+);
+
+-- backlog: self-populating to-do list. Pipeline/audit runs insert rows
+-- when they spot future work (e.g. "catalogue-wide Q&A rollout",
+-- "candidate alias: Manchester United → Man Utd", "D002 dead-wood
+-- candidate"). Manual rows also accepted for human-captured ideas.
+-- `key` lets us upsert so the same suggestion from repeated runs just
+-- bumps `count` instead of duplicating.
+CREATE TABLE IF NOT EXISTS backlog (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    topic         TEXT NOT NULL,              -- e.g. "alias_discovery", "title_cleanup"
+    key           TEXT NOT NULL,              -- de-dup key within topic
+    title         TEXT NOT NULL,              -- one-line human summary
+    details       TEXT,                       -- optional JSON or free-text
+    source        TEXT,                       -- who/what raised it (script name / 'human')
+    status        TEXT NOT NULL DEFAULT 'open',  -- open / resolved / ignored
+    count         INTEGER NOT NULL DEFAULT 1,    -- how many times seen
+    first_seen_at TEXT NOT NULL,
+    last_seen_at  TEXT NOT NULL,
+    resolved_at   TEXT,
+    UNIQUE (topic, key)
+);
+CREATE INDEX IF NOT EXISTS idx_backlog_status ON backlog(status);
+CREATE INDEX IF NOT EXISTS idx_backlog_topic  ON backlog(topic);
 """
 
 

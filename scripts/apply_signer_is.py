@@ -311,12 +311,17 @@ def _propose_specifics(
     current: dict[str, str],
     title: str,
     *,
+    bundle: pp.PresetsBundle,
+    category_id: Optional[str],
     defaults: dict[str, str],
     signer_constants: dict[str, str],
     club_patterns: list[tuple[re.Pattern[str], str]],
 ) -> dict[str, str]:
     merged: dict[str, str] = dict(current)
     merged.update(defaults)
+    # Per-category overlay (Object, Options, Sport, Sub-Type — varies per
+    # category). Safely empty for categories we haven't curated yet.
+    merged.update(bundle.specifics_for_category(category_id))
     merged.update(signer_constants)
 
     is_card = _is_card(title)
@@ -336,6 +341,13 @@ def _propose_specifics(
     # Media Type only for photo-shaped products. Cards, Shirts, DVDs skipped.
     if merged["Type"] in {"Photo", "Framed Photo Display", "Mounted Photo Display"}:
         merged["Media Type"] = "Photograph Photography Picture Image Original Print"
+    else:
+        # The category overlay may have added photo-specific specifics
+        # (Object: Signed Photo, Sub-Type: Photograph) that are wrong for
+        # DVD / Shirt / Card products — strip them so we don't falsely
+        # imply those listings are photographs.
+        for k in ("Object", "Sub-Type", "Media Type"):
+            merged.pop(k, None)
     return merged
 
 
@@ -385,7 +397,8 @@ def _deep_fetch_missing(conn, signer_filter: str, rate_per_sec: float) -> int:
 def _load_candidates(conn, signer_filter: str) -> list[dict]:
     rows = conn.execute(
         """
-        SELECT item_id, title, watch_count, price_gbp, specifics_json
+        SELECT item_id, title, watch_count, price_gbp, specifics_json,
+               category_id
         FROM listings
         WHERE LOWER(title) LIKE ? AND deep_fetched_at IS NOT NULL
         ORDER BY item_id
@@ -400,6 +413,7 @@ def _load_candidates(conn, signer_filter: str) -> list[dict]:
             "title":       r["title"],
             "watch_count": r["watch_count"] or 0,
             "price_gbp":   r["price_gbp"],
+            "category_id": r["category_id"],
             "current":     specifics,
         })
     return out
@@ -424,6 +438,7 @@ def _print_dry_run(
     for c in candidates:
         proposed_is = _propose_specifics(
             c["current"], c["title"],
+            bundle=bundle, category_id=c.get("category_id"),
             defaults=defaults, signer_constants=signer_constants,
             club_patterns=club_patterns,
         )
@@ -489,6 +504,7 @@ def _apply(
     for c in candidates:
         proposed_is = _propose_specifics(
             c["current"], c["title"],
+            bundle=bundle, category_id=c.get("category_id"),
             defaults=defaults, signer_constants=signer_constants,
             club_patterns=club_patterns,
         )
@@ -599,7 +615,10 @@ def main() -> int:
         "Country/Region of Manufacture": args.country,
         "Modified Item":                 "No",
     }
-    if args.sport:
+    # Sport used to live here, but is now category-driven via
+    # category_specifics.yaml. Kept as an optional override when
+    # --sport is passed (for signers in categories we haven't curated).
+    if args.sport and args.sport != "Football":
         signer_constants["Sport"] = args.sport
 
     bundle = pp.load()

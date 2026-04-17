@@ -1,0 +1,58 @@
+# ============================================================================
+# Per-eBay-category Item Specifics overlays.
+#
+# Layered on top of the universal Q&A block in defaults.yaml (COA Included,
+# Autograph Type, Perfect For, Also Known As, Authenticity, etc.) which
+# applies to every KLH listing regardless of category.
+#
+# Use numeric category_id as the key so both:
+#   * retroactive apply_signer_is.py (reads listings.category_id from cache)
+#   * future new-listing dashboard flow (maps knowledge.yaml category →
+#     subject → category_id via pipeline.presets)
+# can look up the right overlay without guessing.
+#
+# Layer order (each overwrites the previous):
+#   1. whatever specifics already exist on the listing
+#   2. defaults.yaml item_specifics  (universal Q&A)
+#   3. this file's overlay for the listing's category_id
+#   4. signer constants (Player/Athlete, Signed By)
+#   5. per-listing derivations (Team, Size, Type, Media Type)
+#
+# TODO (backlog roadmap `category_id_aware_IS`): the proper long-term
+# approach is to pull eBay's Taxonomy API (getItemAspectsForCategory) for
+# each category and auto-discover the valid aspect set + allowed values.
+# This file is the hand-curated interim — we populate as we encounter
+# each category. Leaving a category out is fine: it just falls back to
+# the universal defaults.yaml.
+# ============================================================================
+
+# Small anchor for football photo categories — the value set eBay shows
+# as "Suggested item specifics" for Football Mem > Signed Photos listings.
+# We saw Object / Options / Sport / Sub-Type as the recommended four.
+# Object="Signed Photo" and Sport="Football" are safe universally; Options
+# ("Premiership Players/ Clubs") is what eBay itself suggests even on
+# Retired Players listings so we apply it to both 97085 and 27290.
+_football_signed_photos: &football_signed_photos
+  Sport:    "Football"
+  Object:   "Signed Photo"
+  Options:  "Premiership Players/ Clubs"
+  Sub-Type: "Photograph"
+
+category_specifics:
+  # Sports Mem > Football Mem > Autographs (Original) > Signed Photos: Retired Players
+  "97085": *football_signed_photos
+  # Sports Mem > Football Mem > Autographs (Original) > Signed Photos: Premiership Players/Clubs
+  "27290": *football_signed_photos
+
+  # Sports Mem > Football Mem > Other Football Memorabilia (generic bucket —
+  # still a football context even if the signed item isn't strictly a photo
+  # listing).
+  "2885":
+    Sport:  "Football"
+    Object: "Signed Photo"
+
+  # Add more categories here as we encounter them:
+  #   "97086" — Signed Shirts, etc.
+  #   "35030" — Films & TV (needs Character/Show/etc. — different schema)
+  #   "35028" — Films & TV Female
+  # See pipeline/taxonomy.py (TBD) for the automated discovery path.

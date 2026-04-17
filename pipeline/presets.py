@@ -90,6 +90,7 @@ class PresetsBundle:
     categories_by_subject: dict
     knowledge: dict = field(default_factory=dict)
     dashboard_order: list = field(default_factory=list)
+    category_specifics: dict = field(default_factory=dict)
     source_dir: Path = field(default=PRESETS_DIR)
 
     def product(self, key: str) -> ProductPreset:
@@ -114,6 +115,21 @@ class PresetsBundle:
             return {}
         cats = self.knowledge.get("categories") or {}
         return cats.get(category) or {}
+
+    def specifics_for_category(self, category_id: Optional[str]) -> dict[str, str]:
+        """Return the per-category IS overlay for a given eBay category_id.
+
+        Falls back to {} for unknown categories — the caller then relies
+        on the universal defaults.yaml block only. Populated from
+        presets/category_specifics.yaml and hand-curated until we wire
+        up eBay's Taxonomy API.
+        """
+        if not category_id:
+            return {}
+        table = self.category_specifics.get("category_specifics") or {}
+        entry = table.get(str(category_id)) or {}
+        # Make a copy so callers can mutate without affecting cached state.
+        return dict(entry)
 
     def expand_club(self, short_name: Optional[str]) -> Optional[str]:
         """
@@ -183,13 +199,15 @@ def _read_yaml_optional(path: Path) -> dict:
 def load(presets_dir: Path = PRESETS_DIR) -> PresetsBundle:
     """Load defaults.yaml, products.yaml, knowledge.yaml and the
     description template."""
-    defaults_path  = presets_dir / "defaults.yaml"
-    products_path  = presets_dir / "products.yaml"
-    knowledge_path = presets_dir / "knowledge.yaml"
+    defaults_path          = presets_dir / "defaults.yaml"
+    products_path          = presets_dir / "products.yaml"
+    knowledge_path         = presets_dir / "knowledge.yaml"
+    cat_specifics_path     = presets_dir / "category_specifics.yaml"
 
     defaults = _read_yaml(defaults_path)
     products_raw = _read_yaml(products_path)
     knowledge = _read_yaml_optional(knowledge_path)
+    category_specifics = _read_yaml_optional(cat_specifics_path)
 
     # description template filename is named inside defaults.yaml, but
     # we only hard-require `{size_clause}`. Fall back to the conventional
@@ -243,6 +261,7 @@ def load(presets_dir: Path = PRESETS_DIR) -> PresetsBundle:
         categories_by_subject=products_raw.get("categories_by_subject") or {},
         knowledge=knowledge,
         dashboard_order=products_raw.get("dashboard_order") or [],
+        category_specifics=category_specifics,
         source_dir=presets_dir,
     )
 

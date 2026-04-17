@@ -168,6 +168,20 @@ async function loadSigner(name, teamFilter) {
   const res = await fetch(url);
   const data = await res.json();
   currentData = data;
+
+  // Auto-purge staged choices that already match the live Team IS.
+  // When Claude applies a batch the local cache + DB are updated, so
+  // the next page load should quietly drop those stale selections
+  // rather than keep showing them in the "pending" modal.
+  let purged = 0;
+  for (const L of data.listings) {
+    const s = staged[L.item_id];
+    if (!s) continue;
+    if (s.clear && !L.team_is) { delete staged[L.item_id]; purged++; continue; }
+    if (s.team && L.team_is === s.team) { delete staged[L.item_id]; purged++; }
+  }
+  if (purged > 0) saveStaged();
+
   renderBreakdown(data);
   renderCards(data);
   populateTeamFilter(data.team_breakdown, teamFilter);

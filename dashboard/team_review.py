@@ -29,7 +29,10 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 
-from pipeline import audit_db, lister
+from pipeline import audit_db, lister, presets as pp
+
+
+MAX_TITLE_LEN = 80  # eBay hard cap
 
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -174,13 +177,29 @@ def register_team_review_routes(app: FastAPI) -> None:
                 return JSONResponse({"item_id": item_id, "status": "no-op"})
 
             # Title rewrite: only if we're CHANGING to a known new team
-            # AND the old team appears verbatim in current title. Replace
-            # in-place to keep everything else of the title intact.
+            # AND the old team appears verbatim in current title. Try the
+            # long form first; if that overflows 80 chars, fall back to
+            # the short form via shrink_club; if that still overflows,
+            # leave the title alone (Team IS is still updated).
             new_title: Optional[str] = None
             if choice.team and old_team and old_team != choice.team:
                 cur_title = row["title"] or ""
                 if old_team in cur_title:
-                    new_title = cur_title.replace(old_team, choice.team)
+                    bundle = pp.load()
+                    candidate = cur_title.replace(old_team, choice.team)
+                    if len(candidate) <= MAX_TITLE_LEN:
+                        new_title = candidate
+                    else:
+                        # Try the short form of the chosen team.
+                        short = bundle.shrink_club(choice.team) or choice.team
+                        if short != choice.team:
+                            candidate = cur_title.replace(old_team, short)
+                            if len(candidate) <= MAX_TITLE_LEN:
+                                new_title = candidate
+                    # If still no fit, new_title stays None and we update
+                    # Team IS only. The old team string stays in the title
+                    # as a legacy artifact — user can edit on eBay if they
+                    # care. This is better than the whole revise failing.
 
             try:
                 kwargs: dict = {"confirm": True, "new_specifics_replace": new_specs}

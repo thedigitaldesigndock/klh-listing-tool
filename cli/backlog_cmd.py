@@ -103,56 +103,112 @@ def _cmd_ignore(args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_discover(args: argparse.Namespace) -> int:
-    """Scan the cached catalogue for alt-phrase savings opportunities.
+# Categories known to be wrong for football signatures (used by the
+# miscategorisation scan). Add to this list as we discover more sell-
+# similar pollution patterns.
+KNOWN_MISCAT_FOR_FOOTBALL = {
+    "35030": "Films & TV: TV Memorabilia: Autographs: Male",
+    "35028": "Films & TV: Film Memorabilia: Autographs: Female",
+    "86984": "Sports Mem: Darts Memorabilia",
+    "211":   "Collectables: Other Memorabilia",
+    "27289": "Football Mem: Signed Shirts (wrong for signed photos)",
+    "2885":  "Football Mem: Other Football Memorabilia (too generic)",
+}
 
-    Current discovery passes:
-      1. Longform team names in titles — for every entry in knowledge.yaml
-         `clubs:`, count how many cached listings have the long form in the
-         title and log one backlog entry per club.
+
+def _discover_alias_opportunities(conn, bundle, verbose: bool) -> int:
+    """Pass 1: legacy titles with long-form club names that could be shortened."""
+    clubs = bundle.knowledge.get("clubs") or {}
+    found = 0
+    for short_name, long_name in clubs.items():
+        if not long_name or long_name == short_name:
+            continue
+        saving = len(long_name) - len(short_name)
+        if saving <= 0:
+            continue
+        row = conn.execute(
+            "SELECT COUNT(*) AS n FROM listings "
+            "WHERE INSTR(LOWER(title), LOWER(?)) > 0 "
+            "  AND INSTR(LOWER(title), LOWER(?)) = 0",
+            (long_name, short_name),
+        ).fetchone()
+        n = int(row["n"])
+        if n <= 0:
+            continue
+        backlog.note(
+            conn, topic="alias_discovery",
+            key=f"longform_team:{long_name}",
+            title=(f"{n} legacy titles contain '{long_name}' — "
+                   f"'{short_name}' would save {saving} chars"),
+            details=f"short='{short_name}'  long='{long_name}'  count={n}  char_saving={saving}",
+            source="backlog discover",
+        )
+        found += 1
+        if verbose:
+            print(f"  alias: {long_name!r} × {n}  (→ {short_name!r}, saves {saving} chars)")
+    return found
+
+
+def _discover_football_miscats(conn, bundle, verbose: bool) -> int:
+    """Pass 2: listings in wrong-for-football cats with team names in title.
+
+    Only runs against listings we have `category_id` for (i.e.
+    deep-fetched post commit 2d9a2e3). Until we backfill the full
+    catalogue this only sees a slice — count grows as we fetch more.
+    """
+    clubs = bundle.knowledge.get("clubs") or {}
+    club_terms: list[str] = []
+    for short, full in clubs.items():
+        if short: club_terms.append(short)
+        if full and full != short: club_terms.append(full)
+    # LIKE-friendly — just need ANY mention
+    like_clauses = " OR ".join(
+        ["INSTR(LOWER(title), LOWER(?)) > 0"] * len(club_terms)
+    )
+
+    found = 0
+    for bad_cat, label in KNOWN_MISCAT_FOR_FOOTBALL.items():
+        row = conn.execute(
+            f"SELECT COUNT(*) AS n FROM listings "
+            f"WHERE category_id = ? AND ({like_clauses})",
+            [bad_cat, *club_terms],
+        ).fetchone()
+        n = int(row["n"])
+        if n <= 0:
+            continue
+        backlog.note(
+            conn, topic="category_fix",
+            key=f"football_names_in_cat:{bad_cat}",
+            title=(f"{n} listings in cat {bad_cat} ({label[:50]}) have "
+                   f"football team names in title"),
+            details=(f"Suggests sell-similar miscategorisation. Target cat "
+                     f"depends on signer status (97085 for retired players, "
+                     f"27290 for current Premiership). Source cat label: {label}"),
+            source="backlog discover",
+        )
+        found += 1
+        if verbose:
+            print(f"  miscat: cat={bad_cat} ({label[:40]}) × {n} listings")
+    return found
+
+
+def _cmd_discover(args: argparse.Namespace) -> int:
+    """Scan cached catalogue for improvement opportunities.
+
+    Passes:
+      1. alias_discovery  — legacy titles with long-form teams (savable chars)
+      2. category_fix     — listings in known-wrong cats with team names in title
 
     Each pass uses note() so repeated runs bump `count` instead of
     duplicating. Resolved/ignored entries stay suppressed.
     """
     bundle = pp.load()
-    clubs = bundle.knowledge.get("clubs") or {}
-
     with audit_db.connect() as conn:
-        total_found = 0
-        for short_name, long_name in clubs.items():
-            if not long_name or long_name == short_name:
-                continue  # no useful save possible
-            saving = len(long_name) - len(short_name)
-            if saving <= 0:
-                continue
-            # Find listings where the title contains the long form but not
-            # the short form (so the short form hasn't been used).
-            rows = conn.execute(
-                "SELECT COUNT(*) AS n FROM listings "
-                "WHERE INSTR(LOWER(title), LOWER(?)) > 0 "
-                "  AND INSTR(LOWER(title), LOWER(?)) = 0",
-                (long_name, short_name),
-            ).fetchone()
-            n = int(rows["n"])
-            if n <= 0:
-                continue
-            backlog.note(
-                conn,
-                topic="alias_discovery",
-                key=f"longform_team:{long_name}",
-                title=(f"{n} legacy titles contain '{long_name}' — "
-                       f"'{short_name}' would save {saving} chars"),
-                details=(f"short='{short_name}'  long='{long_name}'  "
-                         f"count={n}  char_saving={saving}"),
-                source="backlog discover",
-            )
-            total_found += 1
-            if args.verbose:
-                print(f"  {long_name!r} × {n}  (→ {short_name!r}, saves {saving} chars)")
-
+        a = _discover_alias_opportunities(conn, bundle, args.verbose)
+        m = _discover_football_miscats(conn, bundle, args.verbose)
         conn.commit()
-
-    print(f"Discovery pass complete: {total_found} alias opportunity topic(s) logged/bumped.")
+    print(f"Discovery pass complete: alias={a}  miscat={m}  "
+          f"(run `klh backlog list` to review)")
     return 0
 
 

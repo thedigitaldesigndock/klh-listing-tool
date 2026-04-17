@@ -64,6 +64,15 @@ SIZE_PATTERNS = [
 # Listings where photo-size shouldn't be set — non-photo products.
 NON_PHOTO_RE = re.compile(r"\b(dvd|shirt|magazine)\b", re.I)
 
+# Multi-pack/job-lot listings like "7x Bryan Robson Hand Signed 6x4..." or
+# "Lot of 5 …" shouldn't be rewritten to singular form — those are genuinely
+# different products. Guard: title starts with "<digit(s)>x" or contains
+# the word "lot of" / "joblot" near the start.
+MULTIPACK_RE = re.compile(
+    r"^\s*(\d+\s*x\b|lot\s+of\b|joblot\b|job\s+lot\b)",
+    re.I,
+)
+
 # Map (Size, Type) → products.yaml product_key. Used when we render a
 # canonical title via pipeline.presets.render_title(). Non-standard
 # shapes (DVD, Shirt, etc.) return None — title cleanup skips them.
@@ -181,6 +190,8 @@ def _propose_title(
     """
     if _is_non_photo(title):
         return None
+    if MULTIPACK_RE.match(title):
+        return None  # "7x Bryan Robson…" — leave multi-pack titles alone
     size = _derive_size(title)
     if not size:
         return None

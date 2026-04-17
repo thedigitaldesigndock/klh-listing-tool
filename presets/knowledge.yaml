@@ -224,6 +224,19 @@ clubs:
   Ipswich:     Ipswich Town
   Luton:       Luton Town
   QPR:         Queens Park Rangers
+  # Additions from catalogue mining (2026-04-17)
+  West Brom:   West Bromwich Albion
+  Boro:        Middlesbrough        # "Boro" is the common fan shortform
+  Everton:     Everton
+  Liverpool:   Liverpool
+  Arsenal:     Arsenal
+  Chelsea:     Chelsea
+  Southampton: Southampton
+  Brentford:   Brentford
+  Fulham:      Fulham
+  Burnley:     Burnley
+  Watford:     Watford
+  Middlesbrough: Middlesbrough      # long-form fallback so pattern matches
   # Scottish
   Celtic:      Celtic
   Rangers:     Rangers

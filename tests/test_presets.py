@@ -581,8 +581,10 @@ def test_shrink_club_full_to_short():
     # Case and whitespace insensitive
     assert bundle.shrink_club("manchester united") == "Man Utd"
     assert bundle.shrink_club("  Manchester   United  ") == "Man Utd"
-    # No alias → None (caller keeps the string verbatim)
-    assert bundle.shrink_club("Arsenal") is None  # Arsenal has no short form alias
+    # Known team with short==long: returns the key verbatim (harmless no-op).
+    assert bundle.shrink_club("Arsenal") == "Arsenal"
+    # Completely unknown team: None
+    assert bundle.shrink_club("Nowhere FC") is None
     assert bundle.shrink_club("") is None
     assert bundle.shrink_club(None) is None
 

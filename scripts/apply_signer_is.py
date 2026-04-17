@@ -118,18 +118,23 @@ def _load_defaults_specifics() -> dict[str, str]:
 
 def _build_club_patterns(bundle: pp.PresetsBundle) -> list[tuple[re.Pattern[str], str]]:
     """
-    For every entry in knowledge.yaml `clubs:`, emit two regex patterns
-    (short form + long form) both mapping to the short form. Patterns
-    are sorted longest-first so "Manchester United" matches before
-    "Manchester" gets confused with anything else.
+    For every entry in knowledge.yaml `clubs:`, emit regex patterns
+    matching either the short or long form in a title, both mapping to
+    the LONG (formal) form. The long form is eBay's canonical Team
+    value for the filter sidebar and has higher search volume than
+    fan-slang short forms.
+
+    Patterns are sorted longest-first so "Manchester United" matches
+    before a shorter substring could incorrectly land.
     """
     clubs = bundle.knowledge.get("clubs") or {}
     pairs: list[tuple[str, str]] = []
     for short, full in clubs.items():
+        canonical = full or short  # entries without a different full form
         if short:
-            pairs.append((short, short))
+            pairs.append((short, canonical))
         if full and full != short:
-            pairs.append((full, short))
+            pairs.append((full, canonical))
     # Longest match first — prevents "Man City" being eaten by "Man".
     pairs.sort(key=lambda p: -len(p[0]))
     return [(re.compile(rf"\b{re.escape(needle)}\b", re.I), target)
@@ -248,6 +253,11 @@ def _propose_specifics(
         if size:
             merged["Size"] = size
     merged["Type"] = _derive_type(title)
+    # Media Type only for photo-shaped products (Photo / Framed / Mounted).
+    # Non-photo Types (Shirt, DVD) are skipped so we don't falsely imply
+    # those listings are photographs.
+    if merged["Type"] in {"Photo", "Framed Photo Display", "Mounted Photo Display"}:
+        merged["Media Type"] = "Photograph Photography Picture Image Original Print"
     return merged
 
 

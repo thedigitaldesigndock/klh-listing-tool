@@ -305,13 +305,20 @@ def _build_team_suffix(
     render_title loop tries each in order and picks the first that
     fits inside the 80-char budget.
 
-    Candidate order (for field1="Leicester Tigers", category="Rugby"):
-        [" Leicester Tigers Rugby",   # full: field1 + category keyword
-         " Leicester Tigers",         # drop category
-         ""]                          # drop everything
+    Policy: prefer the LONG form of a club ("Manchester United") in
+    title — it's the higher-search-volume canonical term. Fall back to
+    the short form ("Man Utd") only when the long form would bust the
+    80-char budget. Works regardless of whether the caller passes the
+    short or long form: we normalise both forms via expand_club/shrink_club.
 
-    For field1="Man Utd", category="Football" (in_title: False):
-        [" Man Utd", ""]
+    Candidate order for field1="Manchester United", category="Football" (in_title: False):
+        [" Manchester United", " Man Utd", ""]
+
+    For field1="Man Utd", category="Football" (same result — long form preferred):
+        [" Manchester United", " Man Utd", ""]
+
+    For field1="Leicester Tigers", category="Rugby" (in_title: True, no club alias):
+        [" Leicester Tigers Rugby", " Leicester Tigers", ""]
 
     For field1=None:
         [""]
@@ -323,9 +330,15 @@ def _build_team_suffix(
     in_title = bool(rule.get("in_title"))
 
     if field1_clean:
+        # Figure out short + long forms, regardless of which was passed in.
+        short_form = bundle.shrink_club(field1_clean) or field1_clean
+        long_form  = bundle.expand_club(short_form) or short_form
+
         if in_title and category:
-            candidates.append(f" {field1_clean} {category.strip()}")
-        candidates.append(f" {field1_clean}")
+            candidates.append(f" {long_form} {category.strip()}")
+        candidates.append(f" {long_form}")
+        if short_form != long_form:
+            candidates.append(f" {short_form}")
 
     # Always include empty string as the last-resort fallback.
     candidates.append("")
@@ -390,15 +403,9 @@ def render_title(
     if field1 is None and qualifier is not None and qualifier.strip():
         field1 = qualifier.strip()
 
-    # If Nicky typed the full club name ("Manchester United") in the
-    # filename, silently shrink it to the short form ("Man Utd") for
-    # the title — saves 6-15 chars on a tight budget. The long form
-    # still ends up in the "Club (Full Name)" IS via render_item_specifics.
-    if field1:
-        shortform = bundle.shrink_club(field1)
-        if shortform:
-            field1 = shortform
-
+    # Candidate generation now handles long/short form selection itself:
+    # tries the long form first (higher search volume) and falls back to
+    # the short form only when the 80-char budget forces it.
     candidates = _build_team_suffix(bundle, field1, category)
 
     # Field1 is prioritised ahead of "Hand" in "Hand Signed". For each

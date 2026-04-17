@@ -589,8 +589,9 @@ def test_shrink_club_full_to_short():
     assert bundle.shrink_club(None) is None
 
 
-def test_render_title_shrinks_long_club_name_from_filename():
-    """If Nicky types 'Manchester United' we still get 'Man Utd' in title."""
+def test_render_title_prefers_long_club_form_when_it_fits():
+    """Filename-agnostic: long form preferred in title when the 80-char
+    budget allows. Short form kicks in only when the long form overflows."""
     bundle = presets.load(PRESETS_DIR)
     title_long = presets.render_title(
         bundle, "a4_mount_a", "Wayne Rooney",
@@ -602,8 +603,26 @@ def test_render_title_shrinks_long_club_name_from_filename():
     )
     # Same outcome regardless of which form the filename used.
     assert title_long == title_short
-    assert "Man Utd" in title_long
-    assert "Manchester United" not in title_long
+    # Short name + A4 mount has room for the long form.
+    assert "Manchester United" in title_long
+    assert "Man Utd" not in title_long
+    assert len(title_long) <= 80
+
+
+def test_render_title_falls_back_to_short_club_when_budget_tight():
+    """Long signer name + 16x12 Framed forces the short-form fallback."""
+    bundle = presets.load(PRESETS_DIR)
+    # 20-char signer name: "Signed 16x12 Framed Photo Display Manchester United
+    # Autograph" = 62 chars of fixed padding. 20 + 62 + space = 83 → overflow
+    # even after dropping "Hand". Builder should drop Manchester United in
+    # favour of Man Utd.
+    title = presets.render_title(
+        bundle, "16x12_frame_a", "Anthony Lewis-Potter",
+        field1="Manchester United", category="Football",
+    )
+    assert "Man Utd" in title
+    assert "Manchester United" not in title
+    assert len(title) <= 80
 
 
 def test_enrich_specifics_normalises_longform_field1():
@@ -633,8 +652,9 @@ def test_render_title_with_field1_injects_team_suffix():
         field1="Man Utd",
         category="Football",
     )
-    # Football has in_title: false → just the club short form.
-    assert " Man Utd " in title
+    # Football has in_title: false → no category word. Long club form preferred
+    # (fits the 80-char budget for Wayne Rooney + photo_10x8).
+    assert " Manchester United " in title
     # Category word must NOT appear when in_title is false.
     assert "Football" not in title
 
@@ -646,10 +666,12 @@ def test_render_title_category_in_title_appends_category_word():
         bundle,
         "photo_10x8",
         "Joe Root",
-        field1="Leicester",  # short
+        field1="Leicester",  # short form — expands to "Leicester City"
         category="Rugby",    # in_title: true
     )
-    assert "Leicester Rugby" in title
+    # Long form ("Leicester City") is now preferred; Category word is appended
+    # when in_title=true and budget allows.
+    assert "Leicester City Rugby" in title
 
 
 def test_render_title_drops_category_when_too_long():
@@ -822,9 +844,10 @@ def test_build_listing_from_parsed_filename():
         product_key="photo_10x8",
         parsed=parsed,
     )
-    # Title picked up field1 + category rule from knowledge.
+    # Title picked up field1 + category rule from knowledge. Long form
+    # preferred when it fits (Wayne Rooney + photo_10x8 has budget).
     assert "Wayne Rooney" in listing["title"]
-    assert "Man Utd" in listing["title"]
+    assert "Manchester United" in listing["title"]
     # Football has in_title:false, so "Football" stays out.
     assert "Football" not in listing["title"]
     # Subject auto-derived from knowledge → football_premier → its category id.

@@ -43,21 +43,28 @@ import sys
 import time
 from datetime import datetime, timezone
 
-from pipeline import audit_db, lister
+from pipeline import audit_db, lister, presets as pp
 
 
 SIGNER_FILTER = "%bryan robson%"
 
-CONSTANTS: dict[str, str] = {
+# Signer-specific constants. Q&A specifics (Perfect For, Autograph Type,
+# Also Known As, COA Included, More In Our Shop, Country of Origin etc.)
+# come from defaults.yaml — loaded once at startup via _load_defaults_specifics.
+SIGNER_CONSTANTS: dict[str, str] = {
     "Player/Athlete":                "Bryan Robson",
     "Signed By":                     "Bryan Robson",
     "Sport":                         "Football",
-    "Original/Reproduction":         "Original",
-    "Signed":                        "Yes",
-    "Authenticity":                  "Hand-Signed",
     "Country/Region of Manufacture": "United Kingdom",
     "Modified Item":                 "No",
 }
+
+
+def _load_defaults_specifics() -> dict[str, str]:
+    """Pull the canonical Q&A specifics from presets/defaults.yaml."""
+    bundle = pp.load()
+    specs = dict(bundle.defaults.get("item_specifics") or {})
+    return specs
 
 SIZE_PATTERNS = [
     (re.compile(r"\b16x12\b", re.I), "16x12"),
@@ -124,10 +131,21 @@ def _is_non_photo(title: str) -> bool:
     return bool(NON_PHOTO_RE.search(title))
 
 
-def _propose_specifics(current: dict[str, str], title: str) -> dict[str, str]:
-    """Merge: start from current, overlay constants, overlay derived."""
-    merged: dict[str, str] = dict(current)  # keep everything already set
-    merged.update(CONSTANTS)                # constants always win
+def _propose_specifics(
+    current: dict[str, str],
+    title: str,
+    defaults: dict[str, str],
+) -> dict[str, str]:
+    """Merge order: current → defaults.yaml Q&A → signer constants → derived.
+
+    Later stages win over earlier ones, so derived per-listing values
+    (Team, Size, Type) are authoritative, then the signer constants
+    (Player/Athlete, Sport etc.), then the Q&A block from defaults.yaml,
+    and finally whatever was on the listing we didn't touch stays as-is.
+    """
+    merged: dict[str, str] = dict(current)  # preserve anything we don't overwrite
+    merged.update(defaults)                 # canonical Q&A block
+    merged.update(SIGNER_CONSTANTS)         # signer identity fields
     team = _derive_team(title)
     if team:
         merged["Team"] = team
@@ -179,13 +197,17 @@ def _load_candidates(conn) -> list[dict]:
     return out
 
 
-def _print_dry_run(candidates: list[dict], sample_n: int = 5) -> dict:
+def _print_dry_run(
+    candidates: list[dict],
+    defaults: dict[str, str],
+    sample_n: int = 5,
+) -> dict:
     """Print summary + sample diffs. Return stats."""
     stats = {"total": len(candidates), "no_change": 0, "added": 0, "changed": 0,
              "skipped_no_size": 0, "net_additions": 0}
     samples_shown = 0
     for c in candidates:
-        proposed = _propose_specifics(c["current"], c["title"])
+        proposed = _propose_specifics(c["current"], c["title"], defaults)
         if proposed == c["current"]:
             stats["no_change"] += 1
             continue
@@ -208,11 +230,16 @@ def _print_dry_run(candidates: list[dict], sample_n: int = 5) -> dict:
     return stats
 
 
-def _apply(conn, candidates: list[dict], rate_per_sec: float) -> None:
+def _apply(
+    conn,
+    candidates: list[dict],
+    defaults: dict[str, str],
+    rate_per_sec: float,
+) -> None:
     sleep = 1.0 / max(rate_per_sec, 0.1)
     targets = [
         c for c in candidates
-        if _propose_specifics(c["current"], c["title"]) != c["current"]
+        if _propose_specifics(c["current"], c["title"], defaults) != c["current"]
     ]
     print(f"\nApplying IS to {len(targets)} listings "
           f"(rate={rate_per_sec}/s, ETA ~{len(targets) * sleep / 60:.1f}m)\n")
@@ -228,7 +255,7 @@ def _apply(conn, candidates: list[dict], rate_per_sec: float) -> None:
     fail = 0
     start = time.monotonic()
     for i, c in enumerate(targets, 1):
-        proposed = _propose_specifics(c["current"], c["title"])
+        proposed = _propose_specifics(c["current"], c["title"], defaults)
         try:
             result = lister.revise_listing(
                 c["item_id"],
@@ -281,6 +308,9 @@ def main() -> int:
                    help="how many per-listing diffs to print in dry-run (default 5)")
     args = p.parse_args()
 
+    defaults = _load_defaults_specifics()
+    print(f"Loaded {len(defaults)} specifics from defaults.yaml")
+
     with audit_db.connect() as conn:
         candidates = _load_candidates(conn)
         if not candidates:
@@ -288,7 +318,7 @@ def main() -> int:
             return 1
 
         print(f"=== BR IS proposal ({len(candidates)} candidates) ===")
-        stats = _print_dry_run(candidates, sample_n=args.sample)
+        stats = _print_dry_run(candidates, defaults, sample_n=args.sample)
         print("\n=== Summary ===")
         print(f"  Total BR listings (deep-fetched): {stats['total']}")
         print(f"  Already fine, no change:          {stats['no_change']}")
@@ -308,7 +338,7 @@ def main() -> int:
                 print("Aborted.")
                 return 1
 
-        _apply(conn, candidates, args.rate)
+        _apply(conn, candidates, defaults, args.rate)
     return 0
 
 

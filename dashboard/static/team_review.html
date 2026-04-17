@@ -48,6 +48,13 @@
             flex-wrap: wrap; }
   .counts .pill { background: #23282f; padding: 2px 8px; border-radius: 999px; }
   .empty { padding: 40px 24px; color: #9aa0ab; }
+  .tool-nav { display: flex; gap: 4px; padding: 0 24px; background: #181c22;
+              border-bottom: 1px solid #262a31; font-size: 13px; overflow-x: auto; }
+  .tool-nav a { display: inline-block; padding: 10px 14px; color: #9aa0ab;
+                text-decoration: none; border-bottom: 2px solid transparent;
+                white-space: nowrap; }
+  .tool-nav a:hover { color: #e6e8eb; }
+  .tool-nav a.active { color: #77a8ff; border-bottom-color: #77a8ff; font-weight: 500; }
   .stagedbar {
     position: sticky; bottom: 0; z-index: 20;
     background: #1a1f25; border-top: 2px solid #47c97b;
@@ -72,6 +79,11 @@
 </style>
 </head>
 <body>
+<nav class="tool-nav">
+  <a href="/">📋 Listings</a>
+  <a href="/team-review" class="active">🏷️ Team Review</a>
+  <a href="/ads">📊 Ad Tiers</a>
+</nav>
 <header>
   <h1>KLH Team Review</h1>
   <select id="signer-select">

@@ -38,6 +38,35 @@ html, body {
   line-height: 1.45;
 }
 
+/* --- Tool nav (shared across Listings / Team Review / Ads) ---------- */
+.tool-nav {
+  display: flex;
+  gap: 4px;
+  padding: 0 28px;
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 13px;
+  overflow-x: auto;
+}
+.tool-nav a {
+  display: inline-block;
+  padding: 10px 14px;
+  color: var(--text-muted);
+  text-decoration: none;
+  border-bottom: 2px solid transparent;
+  white-space: nowrap;
+  transition: color 0.15s, border-color 0.15s;
+}
+.tool-nav a:hover {
+  color: var(--text);
+}
+.tool-nav a.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+  font-weight: 500;
+}
+
 /* --- Header -------------------------------------------------------- */
 
 .app-header {

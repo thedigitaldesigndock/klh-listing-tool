@@ -64,6 +64,21 @@ SIZE_PATTERNS = [
 # Listings where photo-size shouldn't be set — non-photo products.
 NON_PHOTO_RE = re.compile(r"\b(dvd|shirt|magazine)\b", re.I)
 
+# Map (Size, Type) → products.yaml product_key. Used when we render a
+# canonical title via pipeline.presets.render_title(). Non-standard
+# shapes (DVD, Shirt, etc.) return None — title cleanup skips them.
+SIZE_TYPE_TO_PRODUCT_KEY: dict[tuple[str, str], str] = {
+    ("6x4",   "Photo"):                  "photo_6x4",
+    ("10x8",  "Photo"):                  "photo_10x8",
+    ("12x8",  "Photo"):                  "photo_12x8",
+    ("10x8",  "Framed Photo Display"):   "10x8_frame",
+    ("10x8",  "Mounted Photo Display"):  "10x8_mount",
+    ("A4",    "Framed Photo Display"):   "a4_frame_a",
+    ("A4",    "Mounted Photo Display"):  "a4_mount_a",
+    ("16x12", "Framed Photo Display"):   "16x12_frame_a",
+    ("16x12", "Mounted Photo Display"):  "16x12_mount_a",
+}
+
 # National team keywords — used as Team fallback when no club appears in title.
 NATION_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"\bEngland\b", re.I),          "England"),
@@ -144,6 +159,42 @@ def _derive_team(
 
 def _is_non_photo(title: str) -> bool:
     return bool(NON_PHOTO_RE.search(title))
+
+
+def _propose_title(
+    bundle: pp.PresetsBundle,
+    *,
+    signer: str,
+    title: str,
+    category: str,
+    club_patterns: list[tuple[re.Pattern[str], str]],
+) -> Optional[str]:
+    """
+    Build the canonical title using the listing tool's render_title().
+    Returns None for shapes we can't map to a product_key (DVD, Shirt,
+    non-photo edge cases) — caller leaves the title alone.
+
+    Uses the same builder as new listings from the dashboard, so a
+    retrofitted title is byte-identical to what a fresh listing would
+    get. Team is sourced from the same derivation we use for IS, which
+    already routes through shrink_club for Man Utd vs Manchester United.
+    """
+    if _is_non_photo(title):
+        return None
+    size = _derive_size(title)
+    if not size:
+        return None
+    ptype = _derive_type(title)
+    key = SIZE_TYPE_TO_PRODUCT_KEY.get((size, ptype))
+    if not key:
+        return None
+
+    team = _derive_team(title, club_patterns)
+    try:
+        return pp.render_title(bundle, key, signer, field1=team, category=category)
+    except pp.PresetsError:
+        # Name too long for this product + team combination — leave title alone.
+        return None
 
 
 def _propose_specifics(
@@ -237,31 +288,61 @@ def _load_candidates(conn, signer_filter: str) -> list[dict]:
 def _print_dry_run(
     candidates: list[dict],
     *,
+    bundle: pp.PresetsBundle,
+    signer: str,
+    category: str,
     defaults: dict[str, str],
     signer_constants: dict[str, str],
     club_patterns: list[tuple[re.Pattern[str], str]],
+    update_titles: bool,
     sample_n: int,
 ) -> dict:
-    stats = {"total": len(candidates), "no_change": 0, "to_write": 0,
-             "skipped_no_size": 0, "net_additions": 0}
+    stats = {"total": len(candidates), "no_change": 0, "is_only": 0,
+             "title_only": 0, "both": 0,
+             "skipped_no_size": 0, "net_additions": 0, "titles_unchanged": 0}
     shown = 0
     for c in candidates:
-        proposed = _propose_specifics(
+        proposed_is = _propose_specifics(
             c["current"], c["title"],
             defaults=defaults, signer_constants=signer_constants,
             club_patterns=club_patterns,
         )
-        if proposed == c["current"]:
+        is_change = proposed_is != c["current"]
+
+        title_change = False
+        new_title = None
+        if update_titles:
+            new_title = _propose_title(
+                bundle, signer=signer, title=c["title"], category=category,
+                club_patterns=club_patterns,
+            )
+            if new_title and new_title != c["title"]:
+                title_change = True
+            elif new_title is None:
+                stats["titles_unchanged"] += 1
+
+        if not (is_change or title_change):
             stats["no_change"] += 1
             continue
-        stats["to_write"] += 1
-        stats["net_additions"] += len(set(proposed) - set(c["current"]))
-        if "Size" not in proposed and not _is_non_photo(c["title"]):
+        if is_change and title_change:
+            stats["both"] += 1
+        elif is_change:
+            stats["is_only"] += 1
+        else:
+            stats["title_only"] += 1
+
+        stats["net_additions"] += len(set(proposed_is) - set(c["current"]))
+        if "Size" not in proposed_is and not _is_non_photo(c["title"]):
             stats["skipped_no_size"] += 1
+
         if shown < sample_n:
-            print(f"\n  [{c['item_id']}]  watch={c['watch_count']}  "
-                  f"£{c['price_gbp']}  {c['title']}")
-            for line in _diff(c["current"], proposed):
+            print(f"\n  [{c['item_id']}]  watch={c['watch_count']}  £{c['price_gbp']}")
+            if title_change:
+                print(f"    title: {c['title']}")
+                print(f"        →  {new_title}")
+            else:
+                print(f"    title: {c['title']}  (unchanged)")
+            for line in _diff(c["current"], proposed_is):
                 print(line)
             shown += 1
     return stats
@@ -271,44 +352,72 @@ def _apply(
     conn,
     candidates: list[dict],
     *,
+    bundle: pp.PresetsBundle,
     signer: str,
+    category: str,
     defaults: dict[str, str],
     signer_constants: dict[str, str],
     club_patterns: list[tuple[re.Pattern[str], str]],
+    update_titles: bool,
     rate_per_sec: float,
 ) -> None:
     sleep = 1.0 / max(rate_per_sec, 0.1)
-    targets = []
+    # Build the target list: for each listing figure out what (if anything)
+    # to revise. A listing is skipped only when BOTH the IS proposal and
+    # the title proposal produce no change.
+    targets: list[tuple[dict, dict, Optional[str]]] = []
     for c in candidates:
-        proposed = _propose_specifics(
+        proposed_is = _propose_specifics(
             c["current"], c["title"],
             defaults=defaults, signer_constants=signer_constants,
             club_patterns=club_patterns,
         )
-        if proposed != c["current"]:
-            targets.append((c, proposed))
+        is_change = proposed_is != c["current"]
 
-    print(f"\nApplying IS to {len(targets)} listings "
+        new_title: Optional[str] = None
+        if update_titles:
+            candidate_title = _propose_title(
+                bundle, signer=signer, title=c["title"], category=category,
+                club_patterns=club_patterns,
+            )
+            if candidate_title and candidate_title != c["title"]:
+                new_title = candidate_title
+
+        if is_change or new_title is not None:
+            targets.append((c, proposed_is if is_change else None, new_title))
+
+    print(f"\nApplying to {len(targets)} listings "
           f"(rate={rate_per_sec}/s, ETA ~{len(targets) * sleep / 60:.1f}m)\n")
     conn.execute(
         "INSERT INTO optimization_log (event, event_at, details) VALUES (?, ?, ?)",
-        ("SIGNER_IS_START", _now(), f"{signer}: {len(targets)} listings"),
+        ("SIGNER_IS_START", _now(),
+         f"{signer}: {len(targets)} listings, titles={'on' if update_titles else 'off'}"),
     )
     conn.commit()
 
     ok = fail = 0
     start = time.monotonic()
-    for i, (c, proposed) in enumerate(targets, 1):
+    for i, (c, proposed_is, new_title) in enumerate(targets, 1):
         try:
-            result = lister.revise_listing(
-                c["item_id"], new_specifics_replace=proposed, confirm=True,
-            )
+            kwargs: dict = {"confirm": True}
+            if proposed_is is not None:
+                kwargs["new_specifics_replace"] = proposed_is
+            if new_title is not None:
+                kwargs["new_title"] = new_title
+            result = lister.revise_listing(c["item_id"], **kwargs)
             if result.get("ack") in ("Success", "Warning"):
                 ok += 1
-                conn.execute(
-                    "UPDATE listings SET specifics_json = ? WHERE item_id = ?",
-                    (json.dumps(proposed), c["item_id"]),
-                )
+                # Update local cache so re-runs know we already revised.
+                if proposed_is is not None:
+                    conn.execute(
+                        "UPDATE listings SET specifics_json = ? WHERE item_id = ?",
+                        (json.dumps(proposed_is), c["item_id"]),
+                    )
+                if new_title is not None:
+                    conn.execute(
+                        "UPDATE listings SET title = ? WHERE item_id = ?",
+                        (new_title, c["item_id"]),
+                    )
             else:
                 fail += 1
                 warnings = result.get("warnings") or []
@@ -330,9 +439,6 @@ def _apply(
         "INSERT INTO optimization_log (event, event_at, details) VALUES (?, ?, ?)",
         ("SIGNER_IS_DONE", _now(), f"{signer}: ok={ok} fail={fail}"),
     )
-    # Log remaining backlog entry if anything still needs attention.
-    if fail == 0 and ok > 0:
-        backlog.resolve_if_matching = None  # placeholder — no auto-resolve yet
     conn.commit()
 
 
@@ -355,6 +461,11 @@ def main() -> int:
                    help="per-listing diffs to print in dry-run (default 3)")
     p.add_argument("--deep-fetch", action="store_true",
                    help="first deep-fetch any signer listings lacking specifics")
+    p.add_argument("--update-titles", action="store_true",
+                   help="also rewrite titles to the canonical form "
+                        "(replaces legacy keyword-reorder titles)")
+    p.add_argument("--category", default="Football",
+                   help="category for title rendering + Team derivation (default: Football)")
     args = p.parse_args()
 
     signer = args.signer.strip()
@@ -387,19 +498,27 @@ def main() -> int:
             print("Pass --deep-fetch to pull them, or check the name spelling.")
             return 1
 
-        print(f"\n=== {signer} IS proposal ({len(candidates)} candidates) ===")
+        print(f"\n=== {signer} proposal ({len(candidates)} candidates, "
+              f"titles={'ON' if args.update_titles else 'off'}) ===")
         stats = _print_dry_run(
             candidates,
+            bundle=bundle, signer=signer, category=args.category,
             defaults=defaults, signer_constants=signer_constants,
-            club_patterns=club_patterns, sample_n=args.sample,
+            club_patterns=club_patterns, update_titles=args.update_titles,
+            sample_n=args.sample,
         )
         print(f"\n=== Summary ===")
         print(f"  Total listings:                  {stats['total']}")
         print(f"  Already fine, no change:         {stats['no_change']}")
-        print(f"  Will be revised:                 {stats['to_write']}")
+        print(f"  Will update IS only:             {stats['is_only']}")
+        print(f"  Will update title only:          {stats['title_only']}")
+        print(f"  Will update both:                {stats['both']}")
         print(f"  Net new specific key-values:     {stats['net_additions']}")
         if stats['skipped_no_size']:
             print(f"  ⚠ Photo listings without size token in title: {stats['skipped_no_size']}")
+        if args.update_titles and stats['titles_unchanged']:
+            print(f"  (non-photo / unmapped listings keeping current title: "
+                  f"{stats['titles_unchanged']})")
 
         if not args.apply:
             print("\n[DRY RUN] Pass --apply to write live.")
@@ -411,8 +530,9 @@ def main() -> int:
 
         _apply(
             conn, candidates,
-            signer=signer, defaults=defaults,
-            signer_constants=signer_constants, club_patterns=club_patterns,
+            bundle=bundle, signer=signer, category=args.category,
+            defaults=defaults, signer_constants=signer_constants,
+            club_patterns=club_patterns, update_titles=args.update_titles,
             rate_per_sec=args.rate,
         )
     return 0

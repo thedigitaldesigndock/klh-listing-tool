@@ -123,10 +123,15 @@ def register_team_review_routes(app: FastAPI) -> None:
             listings = [L for L in listings if L["team_is"] == team_filter]
 
         candidates = [t for t, _ in team_seen.most_common()] + [
-            "England", "Scotland", "Wales", "Northern Ireland",
-            "Manchester United", "Tottenham Hotspur", "Manchester City",
-            "Nottingham Forest", "West Ham United", "West Bromwich Albion",
-            "Middlesbrough", "Portsmouth",
+            "England", "Scotland", "Wales", "Northern Ireland", "Ireland",
+            "Manchester United", "Manchester City",
+            "Tottenham Hotspur", "Arsenal", "Chelsea", "Liverpool", "Everton",
+            "Nottingham Forest", "Middlesbrough",
+            "West Ham United", "West Bromwich Albion",
+            "Portsmouth", "Millwall", "Colchester United",
+            "Charlton Athletic", "Derby County", "Blackburn Rovers",
+            "Aston Villa", "Newcastle United", "Leeds United",
+            "Leicester City", "Southampton", "Crystal Palace",
         ]
         # Preserve order, de-dupe
         seen = set()

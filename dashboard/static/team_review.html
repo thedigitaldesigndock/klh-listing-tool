@@ -12,13 +12,15 @@
            background: #181c22; border-bottom: 1px solid #262a31;
            display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
   h1 { margin: 0; font-size: 18px; font-weight: 600; }
-  select, input, button {
+  select, input, button, textarea {
     background: #23282f; color: #e6e8eb; border: 1px solid #343a43;
     padding: 6px 10px; border-radius: 6px; font-size: 13px;
+    font-family: inherit;
   }
   button { cursor: pointer; }
   button.primary { background: #2b7cff; border-color: #2b7cff; color: #fff; }
   button.primary:hover { background: #4c93ff; }
+  button.ghost { background: transparent; }
   button:disabled { opacity: 0.5; cursor: not-allowed; }
   .meta { color: #9aa0ab; font-size: 12px; }
   .grid {
@@ -26,7 +28,9 @@
     gap: 14px; padding: 18px 24px;
   }
   .card { background: #181c22; border: 1px solid #262a31; border-radius: 8px;
-          overflow: hidden; display: flex; flex-direction: column; }
+          overflow: hidden; display: flex; flex-direction: column;
+          position: relative; }
+  .card.staged { border-color: #47c97b; box-shadow: 0 0 0 1px #47c97b; }
   .card img { width: 100%; height: 180px; object-fit: contain; background: #0b0e12; }
   .card .body { padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 8px; }
   .card .title { font-size: 12.5px; color: #d0d4da; line-height: 1.35;
@@ -35,18 +39,36 @@
   .card .chips { display: flex; gap: 6px; align-items: center; font-size: 11px; flex-wrap: wrap; }
   .chip { padding: 2px 7px; border-radius: 999px; background: #23282f; color: #9aa0ab; }
   .chip.team { background: #1f3a5c; color: #bcd4f1; }
+  .chip.stage { background: #1f4a2e; color: #b4eec4; }
   .card .row { display: flex; gap: 6px; align-items: center; }
   .card select { flex: 1; font-size: 12px; }
-  .card .status { font-size: 11px; color: #9aa0ab; min-height: 14px; }
-  .card.done { opacity: 0.6; }
-  .card.done .status { color: #7fcf8f; }
-  .card.err .status { color: #ff8080; }
   a { color: #77a8ff; text-decoration: none; }
   a:hover { text-decoration: underline; }
   .counts { display: flex; gap: 10px; font-size: 12px; color: #9aa0ab;
             flex-wrap: wrap; }
   .counts .pill { background: #23282f; padding: 2px 8px; border-radius: 999px; }
   .empty { padding: 40px 24px; color: #9aa0ab; }
+  .stagedbar {
+    position: sticky; bottom: 0; z-index: 20;
+    background: #1a1f25; border-top: 2px solid #47c97b;
+    padding: 10px 24px; display: flex; gap: 12px; align-items: center;
+  }
+  .stagedbar.empty-state { border-top-color: #262a31; }
+  .stagedbar .count { font-size: 13px; font-weight: 600; color: #b4eec4; }
+  .stagedbar .count.zero { color: #9aa0ab; font-weight: 400; }
+
+  .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,0.7);
+              display: none; align-items: center; justify-content: center;
+              z-index: 100; padding: 20px; }
+  .modal-bg.open { display: flex; }
+  .modal { background: #1a1f25; border-radius: 10px; padding: 20px;
+           width: 100%; max-width: 700px; max-height: 90vh;
+           display: flex; flex-direction: column; gap: 12px; }
+  .modal h2 { margin: 0; font-size: 16px; }
+  .modal textarea { width: 100%; min-height: 300px; font-size: 12px;
+                    font-family: ui-monospace, "SF Mono", monospace;
+                    line-height: 1.5; background: #0b0e12; border: 1px solid #262a31; }
+  .modal .actions { display: flex; gap: 8px; justify-content: flex-end; }
 </style>
 </head>
 <body>
@@ -65,15 +87,65 @@
   <div class="grid" id="grid"></div>
   <div class="empty" id="empty" hidden>Pick a signer above to load listings.</div>
 </main>
+
+<div class="stagedbar empty-state" id="stagedbar">
+  <span class="count zero" id="staged-count">0 pending changes</span>
+  <button class="ghost" id="btn-clear">Clear all</button>
+  <button class="primary" id="btn-done" disabled>I'm done — show my choices</button>
+</div>
+
+<div class="modal-bg" id="modal-bg">
+  <div class="modal">
+    <h2>Your pending team corrections</h2>
+    <p class="meta" id="modal-meta"></p>
+    <textarea id="modal-text" readonly></textarea>
+    <div class="actions">
+      <button class="ghost" id="modal-close">Close (keep selections)</button>
+      <button class="primary" id="modal-copy">Copy to clipboard</button>
+      <button class="ghost" id="modal-discard">Discard all selections</button>
+    </div>
+  </div>
+</div>
+
 <script>
+// Staged selections persist across refreshes via localStorage.
+const STORAGE_KEY = "klh_team_review_staged_v1";
+const staged = loadStaged();
+
 const signerSel = document.getElementById("signer-select");
 const teamFilterSel = document.getElementById("team-filter");
 const grid = document.getElementById("grid");
 const summary = document.getElementById("summary");
 const breakdown = document.getElementById("breakdown");
 const empty = document.getElementById("empty");
+const stagedbar = document.getElementById("stagedbar");
+const stagedCount = document.getElementById("staged-count");
+const btnDone = document.getElementById("btn-done");
+const btnClear = document.getElementById("btn-clear");
+const modalBg = document.getElementById("modal-bg");
+const modalText = document.getElementById("modal-text");
+const modalMeta = document.getElementById("modal-meta");
+const modalCopy = document.getElementById("modal-copy");
+const modalClose = document.getElementById("modal-close");
+const modalDiscard = document.getElementById("modal-discard");
 
 let currentData = null;
+
+function loadStaged() {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}"); }
+  catch (e) { return {}; }
+}
+function saveStaged() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(staged));
+  updateStagedBar();
+}
+function updateStagedBar() {
+  const n = Object.keys(staged).length;
+  stagedCount.textContent = n === 0 ? "0 pending changes" : `${n} pending change${n===1?"":"s"}`;
+  stagedCount.classList.toggle("zero", n === 0);
+  stagedbar.classList.toggle("empty-state", n === 0);
+  btnDone.disabled = n === 0;
+}
 
 async function loadSigners() {
   const res = await fetch("/api/team-review/signers");
@@ -136,6 +208,8 @@ function cardFor(L, teamCandidates) {
   const card = document.createElement("div");
   card.className = "card";
   card.dataset.itemId = L.item_id;
+  const stagedChoice = staged[L.item_id];
+  const currentPick = stagedChoice ? stagedChoice.team || "__clear__" : (L.team_is || "");
   card.innerHTML = `
     <a href="${L.ebay_url || ""}" target="_blank" rel="noopener">
       <img src="${L.picture_url || ""}" alt="listing photo" loading="lazy"/>
@@ -144,48 +218,96 @@ function cardFor(L, teamCandidates) {
       <div class="title">${escape(L.title)}</div>
       <div class="chips">
         ${L.team_is ? `<span class="chip team">${escape(L.team_is)}</span>` : `<span class="chip">no team</span>`}
+        ${stagedChoice ? `<span class="chip stage">→ ${escape(stagedChoice.team || "CLEAR")}</span>` : ""}
         <span class="chip">£${L.price_gbp ?? "?"}</span>
         ${L.watch_count ? `<span class="chip">👁 ${L.watch_count}</span>` : ""}
       </div>
       <div class="row">
         <select class="team-choice">
-          <option value="">— pick team —</option>
-          ${teamCandidates.map(t => `<option value="${escape(t)}"${L.team_is===t?" selected":""}>${escape(t)}</option>`).join("")}
-          <option value="__clear__">⌫ clear Team IS</option>
+          <option value="">— pick team / leave alone —</option>
+          ${teamCandidates.map(t => `<option value="${escape(t)}"${currentPick===t?" selected":""}>${escape(t)}</option>`).join("")}
+          <option value="__clear__"${currentPick==="__clear__"?" selected":""}>⌫ clear Team IS</option>
+          <option value="__unstage__">↩ remove my staged change</option>
         </select>
-        <button class="primary apply">Apply</button>
       </div>
-      <div class="status"></div>
     </div>
   `;
-  const btn = card.querySelector(".apply");
+  if (stagedChoice) card.classList.add("staged");
   const sel = card.querySelector(".team-choice");
-  const status = card.querySelector(".status");
-  btn.addEventListener("click", async () => {
-    const choice = sel.value;
-    if (!choice) { status.textContent = "pick a team"; return; }
-    btn.disabled = true; status.textContent = "applying…";
-    const body = choice === "__clear__"
-      ? { clear: true }
-      : { team: choice };
-    try {
-      const res = await fetch("/api/team-review/" + L.item_id, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
-      const data = await res.json();
-      card.classList.add("done");
-      status.textContent = data.new_team ? `✓ set to ${data.new_team}` : "✓ cleared";
-    } catch (e) {
-      card.classList.add("err");
-      status.textContent = "✗ " + e.message;
-      btn.disabled = false;
+  sel.addEventListener("change", () => {
+    const v = sel.value;
+    if (!v) {
+      delete staged[L.item_id];
+    } else if (v === "__unstage__") {
+      delete staged[L.item_id];
+      // reset dropdown to reflect live value
+      sel.value = L.team_is || "";
+    } else if (v === "__clear__") {
+      staged[L.item_id] = { clear: true, title: L.title, old_team: L.team_is };
+    } else {
+      staged[L.item_id] = { team: v, title: L.title, old_team: L.team_is };
+    }
+    saveStaged();
+    card.classList.toggle("staged", !!staged[L.item_id]);
+    // Rerender chip row
+    const existingStageChip = card.querySelector(".chip.stage");
+    if (staged[L.item_id]) {
+      const label = staged[L.item_id].team || "CLEAR";
+      if (existingStageChip) existingStageChip.textContent = "→ " + label;
+      else {
+        const chips = card.querySelector(".chips");
+        const noTeamChip = chips.querySelector(".chip.team, .chip:not(.stage)");
+        const c = document.createElement("span");
+        c.className = "chip stage";
+        c.textContent = "→ " + label;
+        noTeamChip.insertAdjacentElement("afterend", c);
+      }
+    } else {
+      existingStageChip?.remove();
     }
   });
   return card;
 }
+
+function showModal() {
+  const entries = Object.entries(staged);
+  modalMeta.textContent = `${entries.length} correction${entries.length===1?"":"s"} to send to Claude. Copy the block below and paste it into chat.`;
+  // Pretty format: item_id → team (old: was), one per line
+  const lines = entries.map(([id, v]) => {
+    const to = v.clear ? "CLEAR Team IS" : v.team;
+    const oldLabel = v.old_team || "(none)";
+    return `${id}  →  ${to}     [was: ${oldLabel}]  "${v.title}"`;
+  });
+  modalText.value = lines.join("\n");
+  modalBg.classList.add("open");
+}
+
+btnDone.addEventListener("click", showModal);
+btnClear.addEventListener("click", () => {
+  if (!confirm("Discard all staged selections?")) return;
+  for (const k of Object.keys(staged)) delete staged[k];
+  saveStaged();
+  // reload current view so all card state visually resets
+  if (signerSel.value) loadSigner(signerSel.value, teamFilterSel.value);
+});
+modalClose.addEventListener("click", () => modalBg.classList.remove("open"));
+modalDiscard.addEventListener("click", () => {
+  if (!confirm("Discard all staged selections without applying?")) return;
+  for (const k of Object.keys(staged)) delete staged[k];
+  saveStaged();
+  modalBg.classList.remove("open");
+  if (signerSel.value) loadSigner(signerSel.value, teamFilterSel.value);
+});
+modalCopy.addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText(modalText.value);
+    modalCopy.textContent = "Copied ✓";
+    setTimeout(() => modalCopy.textContent = "Copy to clipboard", 1800);
+  } catch (e) {
+    modalText.select();
+    document.execCommand("copy");
+  }
+});
 
 function escape(s) {
   if (s == null) return "";
@@ -203,6 +325,7 @@ teamFilterSel.addEventListener("change", () => {
 });
 
 loadSigners();
+updateStagedBar();
 </script>
 </body>
 </html>

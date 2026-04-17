@@ -237,6 +237,16 @@ clubs:
   Burnley:     Burnley
   Watford:     Watford
   Middlesbrough: Middlesbrough      # long-form fallback so pattern matches
+  Millwall:    Millwall
+  Portsmouth:  Portsmouth
+  Pompey:      Portsmouth           # fan shortform
+  Hammers:     West Ham United      # fan shortform
+  Colchester:  Colchester United
+  Charlton:    Charlton Athletic
+  Derby:       Derby County
+  Reading:     Reading
+  Blackburn:   Blackburn Rovers
+  Rovers:      Blackburn Rovers     # ambiguous but BR's most common "Rovers"
   # Scottish
   Celtic:      Celtic
   Rangers:     Rangers

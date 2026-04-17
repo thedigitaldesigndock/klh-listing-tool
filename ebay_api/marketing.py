@@ -113,18 +113,36 @@ def create_campaign(
         "adRateStrategy":   ad_rate_strategy,
         "bidPercentage":    f"{ad_rate_cap_percent:.1f}",
     }
+    # eBay requires a startDate — default to right now if caller didn't pass.
+    # Format: ISO-8601 with ms + 'Z'. They reject fractional-seconds with
+    # more than 3 digits so we truncate.
+    if not start_date:
+        import datetime as _dt
+        now = _dt.datetime.now(_dt.timezone.utc)
+        start_date = now.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+
     body: dict[str, Any] = {
         "campaignName":      campaign_name,
+        "startDate":         start_date,
         "fundingStrategy":   funding,
         "marketplaceId":     marketplace_id,
-        "campaignCriterion": {
-            "criterionType":              "INVENTORY_PARTITION",
-            "autoSelectFutureInventory":  auto_select_future_inventory,
-            "selectionRules":             [{"categoryScope": "MARKETPLACE"}],
-        },
+        # campaignCriterion only matters when autoSelectFutureInventory is
+        # true — it's the filter eBay uses to decide which new listings
+        # auto-join. Since our tiered campaigns select inventory manually
+        # via bulk_create_ads, we skip the criterion here and let eBay
+        # default it. (When we later want auto-select on STANDARD we'll
+        # pass categoryIds explicitly.)
     }
-    if start_date:
-        body["startDate"] = start_date
+    if auto_select_future_inventory:
+        # Placeholder — add a real categoryIds filter when this path is
+        # wired up. For now every campaign we build has auto-select=False.
+        body["campaignCriterion"] = {
+            "criterionType":              "INVENTORY_PARTITION",
+            "autoSelectFutureInventory":  True,
+            "selectionRules":             [
+                {"categoryIds": ["64482"]},  # Sports Memorabilia root (UK)
+            ],
+        }
     if end_date:
         body["endDate"] = end_date
 

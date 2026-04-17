@@ -117,9 +117,21 @@ def _progress(done, total, agg):
 
 def _apply(buckets: dict[str, list[str]]) -> None:
     print("\n=== Applying live ===\n")
-    created: dict[str, str] = {}
 
-    # 1. Create four campaigns
+    # 1. End all existing RUNNING campaigns FIRST.
+    # eBay only allows a listing to be in one campaign at a time, so we
+    # can't create new campaigns containing these listings while the
+    # legacy Campaign 1 still has them. End-then-create is the only
+    # path — ~5-10 min coverage gap during migration.
+    print("  Ending existing RUNNING campaigns before migration…")
+    ended = _end_legacy_campaigns(skip=set())
+    print(f"    ended {len(ended)} campaign(s)")
+    # Give eBay a moment to propagate the end before we reassign ads.
+    print("  Sleeping 15s to let eBay propagate the campaign end…")
+    time.sleep(15)
+
+    # 2. Create four campaigns
+    created: dict[str, str] = {}
     for name, lo, hi, rate in TIERS:
         campaign_name = f"{TIER_NAME_PREFIX}{name}"
         print(f"  Creating campaign {campaign_name!r} at {rate}%…")
@@ -133,7 +145,7 @@ def _apply(buckets: dict[str, list[str]]) -> None:
         print(f"    created campaign_id={cid}")
         time.sleep(1)
 
-    # 2. Bulk-add listings into each new campaign
+    # 3. Bulk-add listings into each new campaign
     for name, _, _, rate in TIERS:
         cid = created[name]
         ids = buckets.get(name, [])
@@ -149,12 +161,6 @@ def _apply(buckets: dict[str, list[str]]) -> None:
             print(f"    first 5 failures:")
             for f in agg["failures"][:5]:
                 print(f"      {f}")
-
-    # 3. End all other RUNNING campaigns (the legacy Campaign 1, and any
-    # accidental duplicates if the script is re-run)
-    print(f"\n  Ending legacy campaigns (keeping {len(created)} new ones)…")
-    keep = set(created.values())
-    _end_legacy_campaigns(keep)
 
     # 4. Log to optimization_log
     with audit_db.connect() as conn:

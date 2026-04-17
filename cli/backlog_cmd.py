@@ -13,10 +13,43 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import re
 import sys
+from collections import Counter
 from typing import Optional
 
 from pipeline import audit_db, backlog, presets as pp
+
+
+# Lowercase tokens we expect to see in KLH titles — the "vocabulary".
+# Anything capitalised in a title that lowercases to something NOT in this
+# set, not in a team name, and not a signer name is a possible typo.
+_TITLE_VOCAB = {
+    # signing vocab
+    "hand", "signed", "autograph", "autographed", "signature", "auto",
+    # product nouns
+    "photo", "photos", "photograph", "photography", "picture", "image",
+    "print", "poster", "card", "cards", "memorabilia", "merch", "merchandise",
+    "gift", "present",
+    # shape
+    "framed", "frame", "mount", "mounted", "display", "displayed",
+    # COA variants
+    "coa", "+coa", "w/coa", "+", "cert", "certificate", "loa",
+    "letter", "authentic", "authenticity", "certified", "genuine",
+    "original", "inc", "incl", "included", "includes",
+    # sizes
+    "6x4", "10x8", "12x8", "16x12", "a4", "a3", "a5", "inch", "inches",
+    # joiners / filler
+    "with", "&", "/", "-", "the", "and", "for", "of", "in", "on", "at",
+    "real", "vintage", "very", "rare", "limited", "edition",
+}
+
+# Common nation names used in autograph titles.
+_NATION_WORDS = {
+    "england", "scotland", "wales", "ireland", "northern", "britain",
+    "gb", "uk", "italy", "germany", "france", "spain", "brazil",
+    "argentina", "portugal", "netherlands", "usa", "us", "canada",
+}
 
 
 def _cmd_list(args: argparse.Namespace) -> int:
@@ -192,12 +225,90 @@ def _discover_football_miscats(conn, bundle, verbose: bool) -> int:
     return found
 
 
+def _discover_title_typos(conn, bundle, verbose: bool) -> int:
+    """Pass 3: scan every title for capitalised words that aren't in our
+    known vocabulary (signing terms, sizes, teams, nations) or the signer
+    names seen in the catalogue. Likely candidates for typos or teams
+    we should add to knowledge.yaml.
+
+    Logs rows grouped by the unknown word, each with a representative
+    count of how many listings contain it. Low-count words (1-5) are the
+    most likely typos. High-count words may be legitimate teams/events
+    we've missed — still worth a human look.
+    """
+    clubs = bundle.knowledge.get("clubs") or {}
+    known_team_words: set[str] = set()
+    for short, full in clubs.items():
+        for phrase in (short, full):
+            if phrase:
+                for word in phrase.lower().split():
+                    known_team_words.add(word.strip("&/-"))
+
+    # Build a "signer name" set from the catalogue — first two capitalised
+    # words of each title. Not perfect but filters out the most common
+    # signer tokens so we don't flag them as typos.
+    signer_tokens: set[str] = set()
+    for r in conn.execute("SELECT title FROM listings"):
+        if not r["title"]:
+            continue
+        parts = r["title"].split()
+        for p in parts[:2]:
+            tok = p.strip(".,;:!?()[]-")
+            if tok and tok[0].isupper():
+                signer_tokens.add(tok.lower())
+
+    unknown: Counter[str] = Counter()
+    for r in conn.execute("SELECT title FROM listings"):
+        title = r["title"] or ""
+        for raw in title.split():
+            tok = raw.strip(".,;:!?()[]").strip()
+            if not tok or len(tok) < 2:
+                continue
+            low = tok.lower()
+            if low in _TITLE_VOCAB or low in _NATION_WORDS:
+                continue
+            if low in known_team_words or low in signer_tokens:
+                continue
+            if re.fullmatch(r"\d+(x\d+)?", tok, re.I):
+                continue
+            # Capitalised? Count it.
+            if tok[0].isupper():
+                unknown[low] += 1
+
+    # Only surface the top-N unknowns — everything else is long-tail noise.
+    top = unknown.most_common(60)
+    if verbose:
+        print("  top unknown capitalised tokens (candidate typos / missing teams):")
+        for word, n in top:
+            marker = "  ← likely typo" if n <= 5 else ""
+            print(f"    {word:<20} × {n}{marker}")
+
+    logged = 0
+    for word, n in top:
+        # Skip extremely common ones (>200) — they're almost certainly
+        # signer tokens that slipped through the signer-name filter.
+        if n > 200:
+            continue
+        backlog.note(
+            conn, topic="title_typos",
+            key=f"unknown_token:{word}",
+            title=(f"{n} titles contain unrecognised capitalised word "
+                   f"'{word}' — typo, missing team alias, or rare signer?"),
+            details=(f"token='{word}'  count={n}  (low count = likely typo, "
+                     f"higher count = missing team or small signer cohort)"),
+            source="backlog discover",
+        )
+        logged += 1
+    return logged
+
+
 def _cmd_discover(args: argparse.Namespace) -> int:
     """Scan cached catalogue for improvement opportunities.
 
     Passes:
       1. alias_discovery  — legacy titles with long-form teams (savable chars)
       2. category_fix     — listings in known-wrong cats with team names in title
+      3. title_typos      — unrecognised capitalised tokens in titles
 
     Each pass uses note() so repeated runs bump `count` instead of
     duplicating. Resolved/ignored entries stay suppressed.
@@ -206,8 +317,9 @@ def _cmd_discover(args: argparse.Namespace) -> int:
     with audit_db.connect() as conn:
         a = _discover_alias_opportunities(conn, bundle, args.verbose)
         m = _discover_football_miscats(conn, bundle, args.verbose)
+        t = _discover_title_typos(conn, bundle, args.verbose)
         conn.commit()
-    print(f"Discovery pass complete: alias={a}  miscat={m}  "
+    print(f"Discovery pass complete: alias={a}  miscat={m}  typos={t}  "
           f"(run `klh backlog list` to review)")
     return 0
 

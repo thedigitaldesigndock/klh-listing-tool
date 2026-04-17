@@ -126,6 +126,29 @@ class PresetsBundle:
         clubs = self.knowledge.get("clubs") or {}
         return clubs.get(short_name)
 
+    def shrink_club(self, long_name: Optional[str]) -> Optional[str]:
+        """
+        Reverse of expand_club — if `long_name` matches a known full
+        club name in knowledge.yaml `clubs:`, return the short form;
+        otherwise None.
+
+        Used at title-build time to silently substitute "Man Utd" when
+        a filename arrives with "Manchester United" in it, saving title
+        characters. The long form still goes into the "Club (Full Name)"
+        IS so buyers searching the formal name still match.
+
+        Case-insensitive match; whitespace-normalised; matches any entry
+        whose value (long form) equals the input.
+        """
+        if not long_name:
+            return None
+        needle = " ".join(long_name.split()).lower()
+        clubs = self.knowledge.get("clubs") or {}
+        for short, full in clubs.items():
+            if " ".join((full or "").split()).lower() == needle:
+                return short
+        return None
+
 
 # --------------------------------------------------------------------------- #
 # Loader
@@ -367,6 +390,15 @@ def render_title(
     if field1 is None and qualifier is not None and qualifier.strip():
         field1 = qualifier.strip()
 
+    # If Nicky typed the full club name ("Manchester United") in the
+    # filename, silently shrink it to the short form ("Man Utd") for
+    # the title — saves 6-15 chars on a tight budget. The long form
+    # still ends up in the "Club (Full Name)" IS via render_item_specifics.
+    if field1:
+        shortform = bundle.shrink_club(field1)
+        if shortform:
+            field1 = shortform
+
     candidates = _build_team_suffix(bundle, field1, category)
 
     # Field1 is prioritised ahead of "Hand" in "Hand Signed". For each
@@ -528,6 +560,13 @@ def enrich_specifics_from_knowledge(
     label = (rule.get("field1_label") or "").strip() or None
 
     if field1_clean and label:
+        # If Nicky typed the full form ("Manchester United"), normalise
+        # to the short form for the primary specific so IS coverage
+        # stays consistent regardless of which form he typed.
+        shortform = bundle.shrink_club(field1_clean)
+        if shortform:
+            field1_clean = shortform
+
         # Main specific: the short form goes under the label.
         short_value = field1_clean[:65]
         out[label[:40]] = short_value

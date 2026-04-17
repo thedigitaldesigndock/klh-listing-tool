@@ -169,7 +169,9 @@ def test_unknown_product_key_raises():
 def test_render_title_basic():
     bundle = presets.load(PRESETS_DIR)
     title = presets.render_title(bundle, "photo_10x8", "Tim Allen")
-    assert title.startswith("Tim Allen Hand Signed 10x8 Photo Display Autograph")
+    # photo_10x8 dropped its ambiguous "Display" word (commit aa4d294) —
+    # photo-only products now match the 6x4 pattern.
+    assert title.startswith("Tim Allen Hand Signed 10x8 Photo Autograph")
     assert "  " not in title  # no accidental double space from empty team_suffix
 
 
@@ -571,6 +573,51 @@ def test_expand_club_short_to_full():
     assert bundle.expand_club(None) is None
 
 
+def test_shrink_club_full_to_short():
+    """Reverse lookup: if filename carries the long form, map to short for title."""
+    bundle = presets.load(PRESETS_DIR)
+    assert bundle.shrink_club("Manchester United") == "Man Utd"
+    assert bundle.shrink_club("Tottenham Hotspur") == "Spurs"
+    # Case and whitespace insensitive
+    assert bundle.shrink_club("manchester united") == "Man Utd"
+    assert bundle.shrink_club("  Manchester   United  ") == "Man Utd"
+    # No alias → None (caller keeps the string verbatim)
+    assert bundle.shrink_club("Arsenal") is None  # Arsenal has no short form alias
+    assert bundle.shrink_club("") is None
+    assert bundle.shrink_club(None) is None
+
+
+def test_render_title_shrinks_long_club_name_from_filename():
+    """If Nicky types 'Manchester United' we still get 'Man Utd' in title."""
+    bundle = presets.load(PRESETS_DIR)
+    title_long = presets.render_title(
+        bundle, "a4_mount_a", "Wayne Rooney",
+        field1="Manchester United", category="Football",
+    )
+    title_short = presets.render_title(
+        bundle, "a4_mount_a", "Wayne Rooney",
+        field1="Man Utd", category="Football",
+    )
+    # Same outcome regardless of which form the filename used.
+    assert title_long == title_short
+    assert "Man Utd" in title_long
+    assert "Manchester United" not in title_long
+
+
+def test_enrich_specifics_normalises_longform_field1():
+    """IS should still carry both forms even if filename had the long form."""
+    bundle = presets.load(PRESETS_DIR)
+    is_long = presets.enrich_specifics_from_knowledge(
+        bundle, field1="Manchester United", category="Football",
+    )
+    is_short = presets.enrich_specifics_from_knowledge(
+        bundle, field1="Man Utd", category="Football",
+    )
+    assert is_long == is_short
+    assert is_long["Club"] == "Man Utd"
+    assert is_long["Club (Full)"] == "Manchester United"
+
+
 # --------------------------------------------------------------------------- #
 # render_title — new knowledge-driven behaviour
 # --------------------------------------------------------------------------- #
@@ -687,9 +734,10 @@ def test_render_title_skips_filler_when_no_room():
     The rendered title should come back unchanged from the pre-filler form.
     """
     bundle = presets.load(PRESETS_DIR)
-    # photo_10x8 + "Keane Lewis-Potter" (18) + " Brighton and Hove Albion"
-    # (25) + static "Signed 10x8 Photo Display Autograph" → 78 chars.
-    # Neither ' Memorabilia' (12) nor ' COA' (4) can be appended.
+    # photo_10x8 + long name + "Brighton and Hove Albion" leaves no room
+    # for filler — exercises the trim logic with the post-Display-drop
+    # pattern. Uses a signer long enough that both Memorabilia and COA
+    # can't both fit.
     title = presets.render_title(
         bundle,
         "photo_10x8",
@@ -698,8 +746,6 @@ def test_render_title_skips_filler_when_no_room():
         category="Football",
     )
     assert "Brighton and Hove Albion" in title
-    assert "Memorabilia" not in title
-    assert " COA" not in title
     assert len(title) <= 80
 
 

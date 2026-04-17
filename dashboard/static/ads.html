@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>KLH — Ad Tiers</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+         background: #0f1216; color: #e6e8eb; padding: 20px 28px; max-width: 1100px; }
+  h1 { margin: 0 0 20px; font-size: 20px; }
+  h2 { margin: 28px 0 12px; font-size: 15px; color: #9aa0ab;
+       text-transform: uppercase; letter-spacing: 0.03em; }
+  .tiers { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+           gap: 12px; }
+  .tile { background: #181c22; border: 1px solid #262a31; border-radius: 8px;
+          padding: 12px 14px; }
+  .tile .name { font-size: 11px; color: #9aa0ab; text-transform: uppercase;
+                letter-spacing: 0.04em; }
+  .tile .count { font-size: 26px; font-weight: 600; margin: 4px 0; }
+  .tile .meta { font-size: 12px; color: #9aa0ab; }
+  .tile.excluded { opacity: 0.7; }
+  .tile.no_price { background: #1f1a0a; border-color: #4a3a13; }
+  .tile.no_price .count { color: #f5c261; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #262a31; }
+  th { color: #9aa0ab; font-weight: 500; }
+  code { font-family: ui-monospace, "SF Mono", monospace; font-size: 12px;
+         color: #d0d4da; }
+  .event { display: grid; grid-template-columns: 90px 1fr; gap: 16px;
+           padding: 12px 0; border-bottom: 1px solid #262a31; }
+  .event time { font-size: 11px; color: #9aa0ab; font-family: ui-monospace, monospace; }
+  .event .et { font-size: 11px; color: #77a8ff; font-weight: 500; }
+  .event .det { font-size: 12px; color: #d0d4da; line-height: 1.4; }
+</style>
+</head>
+<body>
+<h1>Ad Tier Dashboard</h1>
+
+<h2>Tier distribution — active listings</h2>
+<div class="tiers" id="tiers">Loading…</div>
+
+<h2>Recent events</h2>
+<div id="events">Loading…</div>
+
+<script>
+function escape(s) {
+  if (s == null) return "";
+  return String(s).replace(/[&<>"']/g, c => ({
+    "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+  }[c]));
+}
+
+async function load() {
+  const res = await fetch("/api/ads/summary");
+  const data = await res.json();
+  renderTiers(data);
+  renderEvents(data.events);
+}
+
+function renderTiers(data) {
+  const defs = data.tier_defs;
+  const tiers = data.tiers;
+  const grid = document.getElementById("tiers");
+  grid.innerHTML = "";
+  for (const t of defs) {
+    const count = tiers[t.name] || 0;
+    grid.insertAdjacentHTML("beforeend",
+      `<div class="tile">
+        <div class="name">${escape(t.name)}</div>
+        <div class="count">${count.toLocaleString()}</div>
+        <div class="meta">£${t.lo.toFixed(0)}–${t.hi >= 1e9 ? '∞' : '£'+t.hi.toFixed(0)} · ${t.rate}% cap</div>
+      </div>`);
+  }
+  grid.insertAdjacentHTML("beforeend",
+    `<div class="tile excluded">
+      <div class="name">EXCLUDED</div>
+      <div class="count">${(tiers.EXCLUDED||0).toLocaleString()}</div>
+      <div class="meta">Under £10 · no ads</div>
+    </div>`);
+  if (tiers.NO_PRICE) {
+    grid.insertAdjacentHTML("beforeend",
+      `<div class="tile no_price">
+        <div class="name">NO PRICE</div>
+        <div class="count">${tiers.NO_PRICE.toLocaleString()}</div>
+        <div class="meta">⚠ needs audit fetch</div>
+      </div>`);
+  }
+}
+
+function renderEvents(events) {
+  const root = document.getElementById("events");
+  if (!events || events.length === 0) {
+    root.innerHTML = "<p class='meta'>No events logged yet.</p>";
+    return;
+  }
+  root.innerHTML = "";
+  for (const e of events) {
+    const t = (e.event_at || "").replace("T", " ").replace("Z", "");
+    root.insertAdjacentHTML("beforeend",
+      `<div class="event">
+        <div>
+          <time>${escape(t)}</time>
+          <div class="et">${escape(e.event)}</div>
+        </div>
+        <div class="det">${escape(e.details || "")}</div>
+      </div>`);
+  }
+}
+
+load();
+</script>
+</body>
+</html>

@@ -32,6 +32,7 @@ from fastapi.staticfiles import StaticFiles
 from pipeline import presets as pp
 from pipeline import config as pcfg
 
+from dashboard.ads_panel import register_ads_routes
 from dashboard.catalog import build_catalog
 from dashboard.team_review import register_team_review_routes
 from dashboard.workflow import register_workflow_routes
@@ -157,6 +158,7 @@ def create_app() -> FastAPI:
     # --- Workflow routes (/api/match, /api/mockup, /api/list) --------- #
     register_workflow_routes(app)
     register_team_review_routes(app)
+    register_ads_routes(app)
 
     return app
 

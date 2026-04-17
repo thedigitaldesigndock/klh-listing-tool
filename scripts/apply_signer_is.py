@@ -156,14 +156,35 @@ def _derive_team(
     title: str,
     club_patterns: list[tuple[re.Pattern[str], str]],
 ) -> Optional[str]:
-    """Prefer a club match (any knowledge.yaml entry); else a nation; else None."""
-    for pat, target in club_patterns:
-        if pat.search(title):
-            return target
+    """Derive Team from a title using the policy:
+
+    1. If any nation name appears in the title, use the FIRST nation found.
+       Nicky's legacy keyword-stuffed titles often read "Manchester United
+       England" — the old behaviour flipped to Man Utd, which is wrong for
+       England-photo listings. A signer has plenty of Man Utd listings
+       already; we don't need to cram Man Utd into the England ones.
+
+    2. Else find all club matches and return the LAST one that occurs in
+       the title. In the stuffing convention the primary/default club is
+       typed first ("Man Utd Middlesbrough …") and the specific/secondary
+       is appended — the appended one is usually the photo subject.
+
+    3. Else None (no team mention → Team unset in IS, title gets no team).
+    """
+    # 1. Any nation wins over any club.
     for pat, target in NATION_PATTERNS:
         if pat.search(title):
             return target
-    return None
+
+    # 2. Collect all club matches with their position, pick last.
+    last_match_pos = -1
+    last_target: Optional[str] = None
+    for pat, target in club_patterns:
+        m = pat.search(title)
+        if m is not None and m.start() > last_match_pos:
+            last_match_pos = m.start()
+            last_target = target
+    return last_target
 
 
 def _is_non_photo(title: str) -> bool:

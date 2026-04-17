@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>KLH — Team Review</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+         background: #0f1216; color: #e6e8eb; }
+  header { position: sticky; top: 0; z-index: 10; padding: 14px 24px;
+           background: #181c22; border-bottom: 1px solid #262a31;
+           display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+  h1 { margin: 0; font-size: 18px; font-weight: 600; }
+  select, input, button {
+    background: #23282f; color: #e6e8eb; border: 1px solid #343a43;
+    padding: 6px 10px; border-radius: 6px; font-size: 13px;
+  }
+  button { cursor: pointer; }
+  button.primary { background: #2b7cff; border-color: #2b7cff; color: #fff; }
+  button.primary:hover { background: #4c93ff; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .meta { color: #9aa0ab; font-size: 12px; }
+  .grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 14px; padding: 18px 24px;
+  }
+  .card { background: #181c22; border: 1px solid #262a31; border-radius: 8px;
+          overflow: hidden; display: flex; flex-direction: column; }
+  .card img { width: 100%; height: 180px; object-fit: contain; background: #0b0e12; }
+  .card .body { padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 8px; }
+  .card .title { font-size: 12.5px; color: #d0d4da; line-height: 1.35;
+                  display: -webkit-box; -webkit-line-clamp: 3;
+                  -webkit-box-orient: vertical; overflow: hidden; }
+  .card .chips { display: flex; gap: 6px; align-items: center; font-size: 11px; flex-wrap: wrap; }
+  .chip { padding: 2px 7px; border-radius: 999px; background: #23282f; color: #9aa0ab; }
+  .chip.team { background: #1f3a5c; color: #bcd4f1; }
+  .card .row { display: flex; gap: 6px; align-items: center; }
+  .card select { flex: 1; font-size: 12px; }
+  .card .status { font-size: 11px; color: #9aa0ab; min-height: 14px; }
+  .card.done { opacity: 0.6; }
+  .card.done .status { color: #7fcf8f; }
+  .card.err .status { color: #ff8080; }
+  a { color: #77a8ff; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .counts { display: flex; gap: 10px; font-size: 12px; color: #9aa0ab;
+            flex-wrap: wrap; }
+  .counts .pill { background: #23282f; padding: 2px 8px; border-radius: 999px; }
+  .empty { padding: 40px 24px; color: #9aa0ab; }
+</style>
+</head>
+<body>
+<header>
+  <h1>KLH Team Review</h1>
+  <select id="signer-select">
+    <option value="">— Pick a signer —</option>
+  </select>
+  <select id="team-filter">
+    <option value="">All teams</option>
+  </select>
+  <span class="meta" id="summary"></span>
+  <div class="counts" id="breakdown"></div>
+</header>
+<main>
+  <div class="grid" id="grid"></div>
+  <div class="empty" id="empty" hidden>Pick a signer above to load listings.</div>
+</main>
+<script>
+const signerSel = document.getElementById("signer-select");
+const teamFilterSel = document.getElementById("team-filter");
+const grid = document.getElementById("grid");
+const summary = document.getElementById("summary");
+const breakdown = document.getElementById("breakdown");
+const empty = document.getElementById("empty");
+
+let currentData = null;
+
+async function loadSigners() {
+  const res = await fetch("/api/team-review/signers");
+  const data = await res.json();
+  signerSel.innerHTML = '<option value="">— Pick a signer —</option>';
+  for (const s of data.signers) {
+    const opt = document.createElement("option");
+    opt.value = s.name;
+    opt.textContent = `${s.name}  (${s.count})`;
+    signerSel.appendChild(opt);
+  }
+}
+
+async function loadSigner(name, teamFilter) {
+  if (!name) { grid.innerHTML = ""; empty.hidden = false; return; }
+  empty.hidden = true;
+  grid.innerHTML = '<div class="empty">Loading…</div>';
+  const url = "/api/team-review/" + encodeURIComponent(name)
+    + (teamFilter ? "?team_filter=" + encodeURIComponent(teamFilter) : "");
+  const res = await fetch(url);
+  const data = await res.json();
+  currentData = data;
+  renderBreakdown(data);
+  renderCards(data);
+  populateTeamFilter(data.team_breakdown, teamFilter);
+}
+
+function populateTeamFilter(breakdown, active) {
+  teamFilterSel.innerHTML = '<option value="">All teams</option>';
+  for (const [team, count] of Object.entries(breakdown || {}).sort((a,b)=>b[1]-a[1])) {
+    const opt = document.createElement("option");
+    opt.value = team;
+    opt.textContent = `${team} (${count})`;
+    if (team === active) opt.selected = true;
+    teamFilterSel.appendChild(opt);
+  }
+}
+
+function renderBreakdown(data) {
+  summary.textContent = `${data.total} listings`;
+  breakdown.innerHTML = "";
+  for (const [team, count] of Object.entries(data.team_breakdown || {}).sort((a,b)=>b[1]-a[1])) {
+    const el = document.createElement("span");
+    el.className = "pill";
+    el.textContent = `${team}: ${count}`;
+    breakdown.appendChild(el);
+  }
+}
+
+function renderCards(data) {
+  grid.innerHTML = "";
+  if (!data.listings.length) {
+    grid.innerHTML = '<div class="empty">No listings to review for that filter.</div>';
+    return;
+  }
+  for (const L of data.listings) grid.appendChild(cardFor(L, data.team_candidates));
+}
+
+function cardFor(L, teamCandidates) {
+  const card = document.createElement("div");
+  card.className = "card";
+  card.dataset.itemId = L.item_id;
+  card.innerHTML = `
+    <a href="${L.ebay_url || ""}" target="_blank" rel="noopener">
+      <img src="${L.picture_url || ""}" alt="listing photo" loading="lazy"/>
+    </a>
+    <div class="body">
+      <div class="title">${escape(L.title)}</div>
+      <div class="chips">
+        ${L.team_is ? `<span class="chip team">${escape(L.team_is)}</span>` : `<span class="chip">no team</span>`}
+        <span class="chip">£${L.price_gbp ?? "?"}</span>
+        ${L.watch_count ? `<span class="chip">👁 ${L.watch_count}</span>` : ""}
+      </div>
+      <div class="row">
+        <select class="team-choice">
+          <option value="">— pick team —</option>
+          ${teamCandidates.map(t => `<option value="${escape(t)}"${L.team_is===t?" selected":""}>${escape(t)}</option>`).join("")}
+          <option value="__clear__">⌫ clear Team IS</option>
+        </select>
+        <button class="primary apply">Apply</button>
+      </div>
+      <div class="status"></div>
+    </div>
+  `;
+  const btn = card.querySelector(".apply");
+  const sel = card.querySelector(".team-choice");
+  const status = card.querySelector(".status");
+  btn.addEventListener("click", async () => {
+    const choice = sel.value;
+    if (!choice) { status.textContent = "pick a team"; return; }
+    btn.disabled = true; status.textContent = "applying…";
+    const body = choice === "__clear__"
+      ? { clear: true }
+      : { team: choice };
+    try {
+      const res = await fetch("/api/team-review/" + L.item_id, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+      const data = await res.json();
+      card.classList.add("done");
+      status.textContent = data.new_team ? `✓ set to ${data.new_team}` : "✓ cleared";
+    } catch (e) {
+      card.classList.add("err");
+      status.textContent = "✗ " + e.message;
+      btn.disabled = false;
+    }
+  });
+  return card;
+}
+
+function escape(s) {
+  if (s == null) return "";
+  return String(s).replace(/[&<>"']/g, c => ({
+    "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+  }[c]));
+}
+
+signerSel.addEventListener("change", () => {
+  loadSigner(signerSel.value, teamFilterSel.value);
+});
+teamFilterSel.addEventListener("change", () => {
+  if (!signerSel.value) return;
+  loadSigner(signerSel.value, teamFilterSel.value);
+});
+
+loadSigners();
+</script>
+</body>
+</html>

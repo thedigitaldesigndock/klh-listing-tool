@@ -56,6 +56,7 @@ CREATE TABLE IF NOT EXISTS listings (
     condition_id       TEXT,
     view_item_url      TEXT,
     specifics_json     TEXT,
+    picture_url        TEXT,
     fetched_at         TEXT,
     deep_fetched_at    TEXT
 );
@@ -143,12 +144,31 @@ def connect(path: Path = DB_PATH, *, readonly: bool = False) -> Iterator[sqlite3
     try:
         if not readonly:
             conn.executescript(_SCHEMA)
+            _apply_migrations(conn)
             set_meta(conn, "schema_version", str(SCHEMA_VERSION))
         yield conn
         if not readonly:
             conn.commit()
     finally:
         conn.close()
+
+
+def _apply_migrations(conn: sqlite3.Connection) -> None:
+    """Idempotent ALTER TABLE migrations for pre-existing DB files.
+
+    CREATE TABLE IF NOT EXISTS won't add columns to tables that
+    already exist, so each new column we introduce needs a best-effort
+    ADD COLUMN here. Swallowing "duplicate column" keeps us idempotent.
+    """
+    for alter_sql in (
+        "ALTER TABLE listings ADD COLUMN picture_url TEXT",
+    ):
+        try:
+            conn.execute(alter_sql)
+        except sqlite3.OperationalError as e:
+            if "duplicate column" in str(e).lower():
+                continue
+            raise
 
 
 def _now_iso() -> str:
@@ -235,6 +255,7 @@ def upsert_deep(conn: sqlite3.Connection, item_id: str, deep: dict[str, Any]) ->
             condition_id     = :condition_id,
             category_id      = COALESCE(:category_id, category_id),
             category_name    = COALESCE(:category_name, category_name),
+            picture_url      = COALESCE(:picture_url, picture_url),
             deep_fetched_at  = :deep_fetched_at
         WHERE item_id = :item_id
         """,
@@ -247,6 +268,7 @@ def upsert_deep(conn: sqlite3.Connection, item_id: str, deep: dict[str, Any]) ->
             "condition_id":    deep.get("condition_id"),
             "category_id":     deep.get("category_id"),
             "category_name":   deep.get("category_name"),
+            "picture_url":     deep.get("picture_url"),
             "deep_fetched_at": _now_iso(),
         },
     )

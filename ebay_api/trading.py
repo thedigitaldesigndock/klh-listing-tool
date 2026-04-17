@@ -436,6 +436,19 @@ def _shape_deep_item(raw: dict[str, Any]) -> dict[str, Any]:
 
     selling = raw.get("SellingStatus") or {}
     primary_cat = raw.get("PrimaryCategory") if isinstance(raw.get("PrimaryCategory"), dict) else {}
+
+    # Primary picture URL — used by the team-review dashboard panel to
+    # display a thumbnail next to each listing so the user can eyeball
+    # what team is actually in the photo. GetItem returns PictureURL as
+    # either a single string or a list of strings depending on whether
+    # the listing has multiple photos.
+    pic_details = raw.get("PictureDetails") if isinstance(raw.get("PictureDetails"), dict) else {}
+    pic_url_raw = pic_details.get("PictureURL")
+    if isinstance(pic_url_raw, list):
+        picture_url = pic_url_raw[0] if pic_url_raw else None
+    else:
+        picture_url = pic_url_raw
+
     return {
         "item_specifics": specifics,
         "hit_count":      _as_int(raw.get("HitCount")),
@@ -444,4 +457,5 @@ def _shape_deep_item(raw: dict[str, Any]) -> dict[str, Any]:
         "condition_id":   raw.get("ConditionID"),
         "category_id":    primary_cat.get("CategoryID"),
         "category_name":  primary_cat.get("CategoryName"),
+        "picture_url":    picture_url,
     }

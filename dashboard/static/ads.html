@@ -54,6 +54,9 @@
 <h2>Tier distribution — active listings</h2>
 <div class="tiers" id="tiers">Loading…</div>
 
+<h2>SOTIB (Send Offer To Interested Buyers)</h2>
+<div class="sotib-stats" id="sotib">Loading…</div>
+
 <h2>Recent events</h2>
 <div id="events">Loading…</div>
 </main>
@@ -70,7 +73,23 @@ async function load() {
   const res = await fetch("/api/ads/summary");
   const data = await res.json();
   renderTiers(data);
+  renderSotib(data.sotib);
   renderEvents(data.events);
+}
+
+function renderSotib(s) {
+  const root = document.getElementById("sotib");
+  if (!s) { root.innerHTML = "No data yet."; return; }
+  root.innerHTML = `
+    <div class="tiers">
+      <div class="tile"><div class="name">Offers sent — last 24h</div>
+        <div class="count">${(s.sent_24h||0).toLocaleString()}</div>
+        <div class="meta">Tier-aware SOTIB (10/12/15/18%)</div></div>
+      <div class="tile"><div class="name">Offers sent — last 7d</div>
+        <div class="count">${(s.sent_7d||0).toLocaleString()}</div>
+        <div class="meta">Rolling total</div></div>
+    </div>
+  `;
 }
 
 function renderTiers(data) {

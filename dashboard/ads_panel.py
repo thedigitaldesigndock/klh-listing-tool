@@ -87,8 +87,9 @@ def register_ads_routes(app: FastAPI) -> None:
             for r in conn.execute(
                 "SELECT event, event_at, details FROM optimization_log "
                 "WHERE event IN ('AD_HOUSEKEEPING', 'TIER_CAMPAIGNS_BUILT', "
-                "'BR_RECAT_DONE', 'BR_IS_DONE', 'SIGNER_IS_DONE') "
-                "ORDER BY event_at DESC LIMIT 20"
+                "'BR_RECAT_DONE', 'BR_IS_DONE', 'SIGNER_IS_DONE', "
+                "'SOTIB_BATCH_SENT', 'PLA_CAMPAIGN_BUILT', 'MILESTONE_AD_STRUCTURE') "
+                "ORDER BY event_at DESC LIMIT 30"
             ):
                 events.append({
                     "event":    r["event"],
@@ -96,8 +97,32 @@ def register_ads_routes(app: FastAPI) -> None:
                     "details":  r["details"],
                 })
 
+            # SOTIB activity summary — last 24h + 7d
+            import re
+            sotib_24h = 0
+            sotib_7d = 0
+            from datetime import datetime, timezone, timedelta
+            now = datetime.now(timezone.utc)
+            d24 = (now - timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%SZ")
+            d7  = (now - timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%SZ")
+            for r in conn.execute(
+                "SELECT event_at, details FROM optimization_log "
+                "WHERE event = 'SOTIB_BATCH_SENT' AND event_at >= ?",
+                (d7,)
+            ):
+                m = re.search(r"(\d+)\s+offers? sent", r["details"] or "")
+                if m:
+                    n = int(m.group(1))
+                    sotib_7d += n
+                    if r["event_at"] >= d24:
+                        sotib_24h += n
+
         return JSONResponse({
             "tiers":      tiers,
             "tier_defs":  [{k: v for k, v in t.items() if k != "cid"} for t in TIER_DEFS],
             "events":     events,
+            "sotib": {
+                "sent_24h": sotib_24h,
+                "sent_7d":  sotib_7d,
+            },
         })

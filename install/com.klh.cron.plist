@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  KLH cron agent for macOS launchd.
+
+  Installs the 2-hourly SOTIB + ad-housekeeping refresh on Peter's Mac.
+
+  One-time setup:
+    cp install/com.klh.cron.plist ~/Library/LaunchAgents/com.klh.cron.plist
+    launchctl load ~/Library/LaunchAgents/com.klh.cron.plist
+
+  To disable temporarily:
+    launchctl unload ~/Library/LaunchAgents/com.klh.cron.plist
+
+  To view logs while it runs:
+    tail -f ~/.klh/cron_logs/$(date +%Y-%m-%d).log
+
+  Fires at 08:00, 10:00, 12:00, 14:00, 16:00, 18:00, 20:00, 22:00 local time.
+  8 runs/day = ~every 2 hours during active seller window.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.klh.cron</string>
+
+    <key>Program</key>
+    <string>/Volumes/Samsung_990_4TB/KLH/klh-listing-tool/scripts/klh_cron.sh</string>
+
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>10</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>12</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>14</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>16</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>18</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>20</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>22</integer><key>Minute</key><integer>0</integer></dict>
+    </array>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/klh-cron-stdout.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/klh-cron-stderr.log</string>
+
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>

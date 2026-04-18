@@ -136,8 +136,11 @@ def _apply(plan: list[dict], rate_per_sec: float = 2.0) -> None:
     def _progress(done, total, agg):
         print(f"  {done}/{total}  ok={agg['ok']}  failed={agg['failed']}")
 
+    # Single-item calls: eBay's send_offer batch endpoint is atomic — if ANY
+    # item in a batch has a pre-existing offer or other conflict, the whole
+    # batch fails. One-at-a-time gives us per-listing error isolation.
     agg = negotiation.send_offers(
-        offers, batch_size=10, sleep_between=1.0 / max(rate_per_sec, 0.1),
+        offers, batch_size=1, sleep_between=1.0 / max(rate_per_sec, 0.1),
         progress=_progress,
     )
     print(f"\n=== Done — ok={agg['ok']} failed={agg['failed']} ===")

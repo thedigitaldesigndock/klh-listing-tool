@@ -45,3 +45,9 @@ working/
 !tests/fixtures/**/*.png
 !dashboard/static/**/*.png
 !dashboard/static/**/*.jpg
+
+# Allow tracked extra-images so Nicky's dashboard auto-syncs them via git pull.
+!extra_images/**/*.jpg
+!extra_images/**/*.jpeg
+!extra_images/**/*.png
+!extra_images/**/*.webp

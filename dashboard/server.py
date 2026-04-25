@@ -38,6 +38,35 @@ def _default_port() -> int:
     return DEFAULT_PORT
 
 
+def _git_pull_on_start() -> None:
+    """Run `git pull` in the repo at startup so Nicky's PC auto-syncs
+    new extra-images / preset edits without him touching git. Failures
+    are silent (offline, conflict, not-a-git-checkout) — we don't block
+    the dashboard. Set KLH_NO_GIT_PULL=1 to disable."""
+    import os
+    import subprocess
+    from pathlib import Path
+    if os.environ.get("KLH_NO_GIT_PULL"):
+        return
+    repo_root = Path(__file__).resolve().parent.parent
+    if not (repo_root / ".git").exists():
+        return
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(repo_root), "pull", "--ff-only", "--quiet"],
+            capture_output=True, text=True, timeout=30,
+        )
+        if result.returncode == 0:
+            print("git pull: up to date / fast-forwarded")
+        else:
+            # Don't kill the dashboard for a bad pull — Nicky still wants
+            # to use what's local. Just log it.
+            err = (result.stderr or result.stdout or "").strip().splitlines()
+            print(f"git pull warning: {err[0] if err else 'non-zero exit'}")
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as e:
+        print(f"git pull skipped: {e}")
+
+
 def _open_browser_when_ready(url: str, delay: float = 0.8) -> None:
     """Give uvicorn a moment to bind, then pop the browser."""
     def _target() -> None:
@@ -64,6 +93,9 @@ def run(
             "uvicorn is not installed. Install the dashboard extras:\n"
             "    pip install 'klh-listing-tool[dashboard]'"
         ) from e
+
+    # Sync repo before serving so cached extras / presets are fresh.
+    _git_pull_on_start()
 
     url = f"http://{host}:{port}/"
     print(f"KLH Dashboard → {url}")

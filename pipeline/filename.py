@@ -174,9 +174,17 @@ def parse_stem(stem: str) -> ParsedFilename:
         variant = parts[-1]
         parts = parts[:-1]
 
+    # Two-segment shorthand: `Name_Category.jpg` (no Field1 / no club /
+    # no band, e.g. solo artists or generic-categorised signers).
+    # Anything past variant+price stripping that's just two segments
+    # collapses Field1 → empty and treats segment 2 as Category.
     name = parts[0] if parts else ""
-    field1 = _nonempty(parts[1]) if len(parts) > 1 else None
-    category = _nonempty(parts[2]) if len(parts) > 2 else None
+    if len(parts) == 2:
+        field1 = None
+        category = _nonempty(parts[1])
+    else:
+        field1 = _nonempty(parts[1]) if len(parts) > 1 else None
+        category = _nonempty(parts[2]) if len(parts) > 2 else None
 
     return ParsedFilename(
         name=name.strip(),

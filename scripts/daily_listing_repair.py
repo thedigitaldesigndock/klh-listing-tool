@@ -51,6 +51,12 @@ TITLE_TO_PROD = [
     (re.compile(r"\bSigned 10x8 Photo\b", re.I),       "photo_10x8"),
     (re.compile(r"\bSigned 12x8 Photo\b", re.I),       "photo_12x8"),
     (re.compile(r"\bSigned Card\b", re.I),             "odd_card"),
+    # Catchall: any "Hand Signed Photo" (or "Signed Photo") without a
+    # size keyword — that's the "Odd Size Photo" dashboard button. Routes
+    # to the odd_photo product which uses "All Other Products" extras
+    # (Kim's Picture 2 helper image). Listed last so explicit sizes above
+    # win first.
+    (re.compile(r"\b(?:Hand\s+)?Signed Photo\b", re.I), "odd_photo"),
 ]
 
 # Category families per genre — listings in any of these for a given

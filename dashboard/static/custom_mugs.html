@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>KLH — Custom Mug Reviews</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+         background: #0f1216; color: #e6e8eb; }
+  h1 { margin: 0; font-size: 18px; font-weight: 600; }
+  header { padding: 14px 24px; background: #181c22; border-bottom: 1px solid #262a31;
+           display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+  .tool-nav { display: flex; gap: 4px; padding: 0 24px; background: #181c22;
+              border-bottom: 1px solid #262a31; font-size: 13px; overflow-x: auto; }
+  .tool-nav a { display: inline-block; padding: 10px 14px; color: #9aa0ab;
+                text-decoration: none; border-bottom: 2px solid transparent;
+                white-space: nowrap; }
+  .tool-nav a:hover { color: #e6e8eb; }
+  .tool-nav a.active { color: #77a8ff; border-bottom-color: #77a8ff; font-weight: 500; }
+  .tool-nav .badge { display: inline-block; margin-left: 4px; padding: 1px 7px;
+                     border-radius: 999px; background: #d24c46; color: #fff;
+                     font-size: 11px; font-weight: 600; }
+  .meta { color: #9aa0ab; font-size: 12px; }
+  button {
+    background: #23282f; color: #e6e8eb; border: 1px solid #343a43;
+    padding: 8px 14px; border-radius: 6px; font-size: 13px; font-family: inherit;
+    cursor: pointer;
+  }
+  button.approve { background: #2a8f4a; border-color: #2a8f4a; color: #fff; font-weight: 600; }
+  button.approve:hover { background: #3aab5e; }
+  button.inhouse { background: #8d6c2a; border-color: #8d6c2a; color: #fff; }
+  button.inhouse:hover { background: #a78236; }
+  button.reject { background: #b23e3e; border-color: #b23e3e; color: #fff; }
+  button.reject:hover { background: #c95353; }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  .grid { padding: 20px 24px; display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(520px, 1fr)); gap: 18px; }
+  .card { background: #181c22; border: 1px solid #262a31; border-radius: 10px;
+          overflow: hidden; display: flex; flex-direction: column; }
+  .card .preview { width: 100%; background: #0b0e12; padding: 10px;
+                   display: flex; justify-content: center; align-items: center;
+                   min-height: 220px; }
+  .card .preview img { max-width: 100%; max-height: 300px; object-fit: contain; }
+  a.button.download-link {
+    background: #2b4566; border-color: #2b4566; color: #fff;
+    text-decoration: none; display: inline-flex; align-items: center;
+    text-align: center; padding: 8px 14px; border-radius: 6px;
+    font-size: 13px; border: 1px solid #2b4566;
+  }
+  a.button.download-link:hover { background: #3a5b86; text-decoration: none; }
+  .card .body { padding: 14px 18px 16px; display: flex; flex-direction: column; gap: 10px; }
+  .card h2 { margin: 0; font-size: 15px; font-weight: 600; color: #e6e8eb; }
+  .kv { display: grid; grid-template-columns: 120px 1fr; gap: 4px 12px;
+        font-size: 13px; line-height: 1.5; }
+  .kv dt { color: #9aa0ab; }
+  .kv dd { margin: 0; color: #d0d4da; }
+  .kv dd.big { font-size: 18px; font-weight: 600; color: #fff; }
+  .actions { display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
+  .empty { padding: 60px 24px; text-align: center; color: #9aa0ab; }
+  .empty .big { font-size: 40px; margin-bottom: 10px; }
+  textarea { width: 100%; background: #0b0e12; border: 1px solid #343a43;
+             color: #e6e8eb; padding: 6px 8px; border-radius: 6px; font-size: 12px;
+             font-family: inherit; resize: vertical; }
+  .status-row { display: flex; gap: 12px; align-items: center; font-size: 12px;
+                color: #9aa0ab; }
+  .pill { padding: 2px 8px; border-radius: 999px; background: #23282f; font-size: 11px; }
+  .pill.custom { background: #3c2f5c; color: #d4c1f1; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Custom Mug Reviews</h1>
+  <span class="meta" id="lastRefresh">Loading…</span>
+  <button onclick="lastSignature = null; load();" style="margin-left:auto;">↻ Refresh</button>
+</header>
+<nav class="tool-nav">
+  <a href="/">📋 Listings</a>
+  <a href="/team-review">🏷️ Team Review</a>
+  <a href="/ads">📊 Ad Tiers</a>
+  <a href="/custom-mugs" class="active">🎨 Custom Mugs <span class="badge" id="navBadge" style="display:none">0</span></a>
+</nav>
+<main id="main">
+  <div class="empty" id="loading">Loading…</div>
+</main>
+
+<script>
+async function fetchJSON(url, opts) {
+  const r = await fetch(url, opts);
+  if (!r.ok) throw new Error(`${url} → ${r.status}`);
+  return r.json();
+}
+
+function el(tag, attrs = {}, children = []) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "class") e.className = v;
+    else if (k === "html") e.innerHTML = v;
+    else if (k.startsWith("on")) e.addEventListener(k.slice(2), v);
+    else e.setAttribute(k, v);
+  }
+  for (const c of [].concat(children)) {
+    if (c == null) continue;
+    e.appendChild(typeof c === "string" ? document.createTextNode(c) : c);
+  }
+  return e;
+}
+
+async function post(pod_id, action, body) {
+  const r = await fetch(`/api/custom-mugs/${pod_id}/${action}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body || {}),
+  });
+  if (!r.ok) {
+    const msg = await r.text();
+    throw new Error(msg);
+  }
+  return r.json();
+}
+
+function renderCard(row) {
+  const preview = el("div", { class: "preview" }, [
+    row.has_preview
+      ? el("img", { src: `/api/custom-mugs/${row.pod_id}/preview.png` })
+      : el("div", { class: "meta" }, ["no preview generated"]),
+  ]);
+
+  const personalLine = row.personalisation_name || row.personalisation_number
+    ? `${row.personalisation_name || "?"} #${row.personalisation_number || "?"}`
+    : "—";
+
+  const kv = el("dl", { class: "kv" }, [
+    el("dt", {}, ["Buyer entered"]), el("dd", { class: "big" }, [personalLine]),
+    el("dt", {}, ["Product"]), el("dd", {}, [`${row.custom_team || "?"} ${row.custom_era || ""}`.trim()]),
+    el("dt", {}, ["SKU"]), el("dd", {}, [row.sku || "?"]),
+    el("dt", {}, ["Order"]), el("dd", {}, [row.listing_ref || "?"]),
+    el("dt", {}, ["Ship to"]), el("dd", {}, [
+      `${row.shipping_name || "?"} — ${row.shipping_postcode || "?"}, ${row.shipping_country || ""}`,
+    ]),
+    el("dt", {}, ["Received"]), el("dd", {}, [row.created_at || "?"]),
+  ]);
+
+  const notes = el("textarea", {
+    rows: 2,
+    placeholder: "Notes (optional)",
+    id: `notes-${row.pod_id}`,
+  });
+
+  async function handle(action) {
+    const notesVal = notes.value.trim();
+    const buttons = card.querySelectorAll("button");
+    buttons.forEach(b => b.disabled = true);
+    try {
+      await post(row.pod_id, action, { notes: notesVal || null });
+      card.style.opacity = "0.35";
+      setTimeout(load, 400);
+    } catch (e) {
+      alert(`Failed: ${e.message}`);
+      buttons.forEach(b => b.disabled = false);
+    }
+  }
+
+  // Order-first filename so in-house fulfilment can match PNG to eBay order at a glance.
+  // listing_ref is "{order_id}:{item_id}" — take the order side for the filename.
+  const orderId = (row.listing_ref || "").split(":")[0] || `pod${row.pod_id}`;
+  const downloadName = (
+    `${orderId}_${row.custom_team || "mug"}_${row.custom_era || ""}_` +
+    `${row.personalisation_name || "NAME"}_${row.personalisation_number || "0"}.png`
+  ).replace(/\s+/g, "_");
+
+  const actions = el("div", { class: "actions" }, [
+    el("button", { class: "approve", onclick: () => handle("approve") },
+       ["✓ Approve → 215"]),
+    el("button", { class: "inhouse", onclick: () => handle("inhouse") },
+       ["🏠 In-house"]),
+    el("a", {
+      class: "button download-link",
+      href: `/api/custom-mugs/${row.pod_id}/preview.png`,
+      download: downloadName,
+    }, ["⬇ Download PNG"]),
+    el("button", { class: "reject", onclick: () => handle("reject") },
+       ["✗ Reject"]),
+  ]);
+
+  const statusRow = el("div", { class: "status-row" }, [
+    el("span", { class: "pill custom" }, ["Custom"]),
+    el("span", { class: "pill" }, [`pod #${row.pod_id}`]),
+  ]);
+
+  const body = el("div", { class: "body" }, [
+    el("h2", {}, [`Custom — ${personalLine}`]),
+    statusRow,
+    kv,
+    notes,
+    actions,
+  ]);
+
+  const card = el("div", { class: "card" }, [preview, body]);
+  return card;
+}
+
+// Signature of the last rendered data — skip a full redraw if nothing changed.
+// Prevents the UI blinking on every refresh.
+let lastSignature = null;
+
+function dataSignature(items) {
+  return JSON.stringify(items.map(r => [r.pod_id, r.status, r.reviewed_at]));
+}
+
+async function load() {
+  try {
+    const data = await fetchJSON("/api/custom-mugs/pending");
+    const items = data.items || [];
+    const sig = dataSignature(items);
+
+    document.getElementById("lastRefresh").textContent =
+      `${items.length} pending · refreshed ${new Date().toLocaleTimeString()}`;
+
+    const badge = document.getElementById("navBadge");
+    if (items.length > 0) {
+      badge.style.display = "inline-block";
+      badge.textContent = items.length;
+    } else {
+      badge.style.display = "none";
+    }
+
+    // Only rebuild the DOM if the data actually changed
+    if (sig === lastSignature) return;
+    lastSignature = sig;
+
+    const main = document.getElementById("main");
+    main.innerHTML = "";
+
+    if (items.length === 0) {
+      main.appendChild(el("div", { class: "empty" }, [
+        el("div", { class: "big" }, ["✓"]),
+        el("div", {}, ["No custom mugs awaiting review."]),
+      ]));
+      return;
+    }
+
+    const grid = el("div", { class: "grid" });
+    for (const row of items) grid.appendChild(renderCard(row));
+    main.appendChild(grid);
+  } catch (e) {
+    document.getElementById("main").innerHTML =
+      `<div class="empty">Error loading: ${e.message}</div>`;
+  }
+}
+
+load();
+// Refresh every 15 minutes — use the Refresh button (or reload the page) for manual.
+setInterval(load, 15 * 60 * 1000);
+</script>
+</body>
+</html>

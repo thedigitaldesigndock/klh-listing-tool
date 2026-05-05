@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>KLH — Cron Health</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+         background: #0f1216; color: #e6e8eb; }
+  .tool-nav { display: flex; gap: 4px; padding: 0 24px; background: #181c22;
+              border-bottom: 1px solid #262a31; font-size: 13px; overflow-x: auto; }
+  .tool-nav a { display: inline-block; padding: 10px 14px; color: #9aa0ab;
+                text-decoration: none; border-bottom: 2px solid transparent;
+                white-space: nowrap; }
+  .tool-nav a:hover { color: #e6e8eb; }
+  .tool-nav a.active { color: #77a8ff; border-bottom-color: #77a8ff; font-weight: 500; }
+  main { padding: 18px 24px; max-width: 1100px; }
+  h1 { margin: 0 0 12px; font-size: 20px; }
+  h2 { margin: 24px 0 10px; font-size: 14px; color: #9aa0ab;
+       text-transform: uppercase; letter-spacing: 0.04em; }
+  .banner { padding: 12px 16px; border-radius: 8px; margin-bottom: 16px;
+            font-weight: 500; font-size: 14px; display: flex; gap: 10px; align-items: center; }
+  .banner.ok       { background: #1f4a2e; color: #b4eec4; }
+  .banner.degraded { background: #4a1f1f; color: #f1bcbc; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #262a31; }
+  th { color: #9aa0ab; font-weight: 500; font-size: 11px;
+       text-transform: uppercase; letter-spacing: 0.04em; }
+  tr:hover { background: #181c22; }
+  .ok       { color: #47c97b; }
+  .fail     { color: #f48a8a; }
+  .meta     { color: #9aa0ab; font-size: 12px; }
+  code      { font-family: ui-monospace, "SF Mono", monospace; font-size: 12px; }
+  .pill { display: inline-block; padding: 2px 8px; border-radius: 999px;
+          background: #23282f; font-size: 11px; }
+  .pill.ok   { background: #1f4a2e; color: #b4eec4; }
+  .pill.fail { background: #4a1f1f; color: #f1bcbc; }
+</style>
+</head>
+<body>
+<nav class="tool-nav">
+  <a href="/">📋 Listings</a>
+  <a href="/team-review">🏷️ Team Review</a>
+  <a href="/ads">📊 Ad Tiers</a>
+  <a href="/cron-health" class="active">⏱ Cron Health</a>
+    <span id="klh-version-pill" style="margin-left:auto;align-self:center;padding:2px 10px;border-radius:999px;background:#23282f;color:#9aa0ab;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;" title="loading…">v?</span>
+    <script>fetch('/api/version').then(r=>r.json()).then(v=>{const el=document.getElementById('klh-version-pill');if(!el)return;el.textContent=v.sha+' · '+v.date.slice(5,10);el.title=v.subject;});</script>
+</nav>
+
+<main>
+  <h1>Cron Health</h1>
+  <div id="banner" class="banner ok">Loading…</div>
+
+  <h2>Pass rate (last 24 runs)</h2>
+  <table id="by-job">
+    <thead>
+      <tr><th>Job</th><th>Pass rate</th><th>Avg duration</th><th>Runs</th></tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <h2>Recent runs</h2>
+  <table id="runs">
+    <thead>
+      <tr><th>When (UTC)</th><th>Status</th><th>Jobs</th></tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+</main>
+
+<script>
+function esc(s) { return (s==null?"":String(s)).replace(/[&<>"']/g, c => ({
+  "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c])); }
+
+async function load() {
+  const res = await fetch("/api/cron-health/runs");
+  const data = await res.json();
+
+  const banner = document.getElementById("banner");
+  if (data.degraded) {
+    banner.className = "banner degraded";
+    banner.textContent = "⚠ Cron degraded — " + (data.degraded_reason || "");
+  } else {
+    const stale = data.stale_minutes != null ? `${data.stale_minutes} min ago` : "—";
+    banner.className = "banner ok";
+    banner.textContent = `✓ Healthy — last run ${stale}`;
+  }
+
+  const byjob = document.querySelector("#by-job tbody");
+  byjob.innerHTML = data.by_job.map(j => `
+    <tr>
+      <td><code>${esc(j.name)}</code></td>
+      <td><span class="pill ${j.pass_pct === 100 ? 'ok' : 'fail'}">${j.pass_pct}%</span> ${j.ok_runs}/${j.total_runs}</td>
+      <td>${j.avg_duration_s}s</td>
+      <td>${j.total_runs}</td>
+    </tr>`).join("") || `<tr><td colspan="4" class="meta">No runs yet.</td></tr>`;
+
+  const runs = document.querySelector("#runs tbody");
+  runs.innerHTML = data.runs.map(r => `
+    <tr>
+      <td><code>${esc(r.at)}</code></td>
+      <td>${r.ok
+        ? `<span class="pill ok">SUCCESS</span>`
+        : `<span class="pill fail">FAILED</span>`}</td>
+      <td>${r.jobs.map(j =>
+        `<code>${esc(j.name)}</code> <span class="${j.ok ? 'ok' : 'fail'}">${esc(j.status)}</span> <span class="meta">${j.duration}s</span>`
+      ).join(" &nbsp; ")}</td>
+    </tr>`).join("") || `<tr><td colspan="3" class="meta">No runs yet — wait for the next cron fire.</td></tr>`;
+}
+load();
+setInterval(load, 30000);  // refresh every 30s
+</script>
+</body>
+</html>

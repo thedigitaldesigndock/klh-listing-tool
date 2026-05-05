@@ -34,6 +34,8 @@ from pipeline import config as pcfg
 
 from dashboard.ads_panel import register_ads_routes
 from dashboard.catalog import build_catalog
+from dashboard.custom_mugs import register_custom_mugs_routes
+from dashboard.cron_health import register_cron_health_routes
 from dashboard.team_review import register_team_review_routes
 from dashboard.workflow import register_workflow_routes
 
@@ -81,6 +83,34 @@ def create_app() -> FastAPI:
     @app.get("/api/health")
     def health() -> dict[str, str]:
         return {"status": "ok"}
+
+    @app.get("/api/version")
+    def api_version() -> JSONResponse:
+        """Git short-hash + commit date of the running checkout. Used by
+        the nav bar to confirm an update.bat run on Kim/Nicky's PC
+        actually picked up the latest code without us guessing."""
+        import subprocess
+        try:
+            sha = subprocess.check_output(
+                ["git", "-C", str(REPO_ROOT), "rev-parse", "--short", "HEAD"],
+                stderr=subprocess.DEVNULL, timeout=2,
+            ).decode().strip()
+            date = subprocess.check_output(
+                ["git", "-C", str(REPO_ROOT), "log", "-1", "--format=%cd",
+                 "--date=format:%Y-%m-%d %H:%M"],
+                stderr=subprocess.DEVNULL, timeout=2,
+            ).decode().strip()
+            subject = subprocess.check_output(
+                ["git", "-C", str(REPO_ROOT), "log", "-1", "--format=%s"],
+                stderr=subprocess.DEVNULL, timeout=2,
+            ).decode().strip()
+        except Exception as e:
+            return JSONResponse({"sha": "?", "date": "?", "subject": str(e)})
+        return JSONResponse({
+            "sha":     sha,
+            "date":    date,
+            "subject": subject,
+        })
 
     @app.get("/api/products")
     def api_products() -> JSONResponse:
@@ -159,6 +189,8 @@ def create_app() -> FastAPI:
     register_workflow_routes(app)
     register_team_review_routes(app)
     register_ads_routes(app)
+    register_cron_health_routes(app)
+    register_custom_mugs_routes(app)
 
     return app
 

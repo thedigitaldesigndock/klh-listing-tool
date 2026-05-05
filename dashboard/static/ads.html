@@ -47,6 +47,10 @@
   <a href="/">📋 Listings</a>
   <a href="/team-review">🏷️ Team Review</a>
   <a href="/ads" class="active">📊 Ad Tiers</a>
+    <a href="/cron-health">⏱ Cron Health</a>
+  <a href="/custom-mugs">🎨 Custom Mugs</a>
+    <span id="klh-version-pill" style="margin-left:auto;align-self:center;padding:2px 10px;border-radius:999px;background:#23282f;color:#9aa0ab;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;" title="loading…">v?</span>
+    <script>fetch('/api/version').then(r=>r.json()).then(v=>{const el=document.getElementById('klh-version-pill');if(!el)return;el.textContent=v.sha+' · '+v.date.slice(5,10);el.title=v.subject;});</script>
 </nav>
 <main class="content">
 <h1>Ad Tier Dashboard</h1>

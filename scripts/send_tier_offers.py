@@ -55,11 +55,50 @@ def _tier_for_price(p):
     return None
 
 
+def _get_markdown_listing_ids() -> set[str]:
+    """Return the set of listing_ids covered by any RUNNING markdown sale.
+    Used to exclude already-discounted items from SOTIB so we don't
+    double-discount on top of Kim's own sale events.
+    """
+    from ebay_api.marketing import _request, BASE
+    out: set[str] = set()
+    try:
+        _, body, _ = _request(
+            "GET",
+            f"{BASE}/promotion?marketplace_id=EBAY_GB&promotion_status=RUNNING&limit=50&offset=0",
+        )
+        promos = (body or {}).get("promotions") or []
+    except Exception as e:
+        print(f"  WARN: couldn't fetch promotions: {str(e)[:120]}")
+        return out
+    for p in promos:
+        if p.get("promotionType") != "MARKDOWN_SALE":
+            continue
+        pid = p.get("promotionId")
+        if not pid:
+            continue
+        try:
+            _, detail, _ = _request("GET", f"{BASE}/item_price_markdown/{pid}")
+        except Exception as e:
+            print(f"  WARN: couldn't fetch markdown {pid}: {str(e)[:120]}")
+            continue
+        for sid in detail.get("selectedInventoryDiscounts") or []:
+            crit = sid.get("inventoryCriterion") or {}
+            for lid in crit.get("listingIds") or []:
+                out.add(str(lid))
+    return out
+
+
 def _build_plan() -> list[dict]:
     """For each eligible listing, compute tier + offer. Returns ready-to-send list."""
     print("Fetching eligible listings from Negotiation API…")
     eligible = negotiation.find_eligible_items(limit=0)
     print(f"  {len(eligible)} eligible")
+
+    # Exclude listings already in an active markdown — sending SOTIB on
+    # top of an existing sale double-discounts and undercuts the seller.
+    on_markdown = _get_markdown_listing_ids()
+    print(f"  {len(on_markdown)} already in active markdown sales (will be skipped)")
 
     # Cross-reference with audit DB for prices
     with audit_db.connect(readonly=True) as conn:
@@ -116,8 +155,16 @@ def _build_plan() -> list[dict]:
     skipped_under_10 = 0
     skipped_no_price = 0
     skipped_excluded = 0
+    skipped_markdown = 0
     mug_capped = 0
     for lid in eligible:
+        # Active markdown sale on this listing — never SOTIB on top, or
+        # we double-discount and undercut Kim's own sale price.
+        # (See 2026-05-06 Attenborough sale incident: SOTIB 10% on top
+        # of the 26%-off £48.09 price = buyer demanded £4.81 refund.)
+        if lid in on_markdown:
+            skipped_markdown += 1
+            continue
         price = prices.get(lid)
         if price is None:
             skipped_no_price += 1
@@ -155,6 +202,7 @@ def _build_plan() -> list[dict]:
     print(f"  under £10 (skipped): {skipped_under_10}")
     print(f"  no price in cache:   {skipped_no_price}")
     print(f"  excluded signers:    {skipped_excluded}")
+    print(f"  on markdown sale:    {skipped_markdown}")
     print(f"  mugs (5% cap):       {mug_capped}")
     print(f"  will send offers:    {len(plan)}")
     return plan

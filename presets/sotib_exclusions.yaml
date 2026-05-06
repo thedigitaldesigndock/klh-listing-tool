@@ -1,0 +1,23 @@
+# SOTIB signer exclusions.
+#
+# When Kim runs a sale-event promo (e.g. "26% off all David Attenborough"),
+# her existing margin is already cut. Stacking a tier-aware SOTIB on top
+# (BUDGET 18% / STANDARD 15% / PREMIUM 12% / PREMIUM_PLUS 10%) creates a
+# double-discount that:
+#   - eats too much margin
+#   - annoys buyers who just paid the sale price (they get an offer email
+#     for a different listing of the same signer at a further % off)
+#
+# Add the signer to this list while the sale is running. send_tier_offers
+# reads the file every run, so an edit takes effect on the next 2-hourly
+# fire — no restart needed.
+#
+# Match is a case-insensitive substring on the listing title — list
+# both forms when needed (Sir David Attenborough vs David Attenborough)
+# so titles missing the honorific are still excluded.
+#
+# Remove the entry when the sale ends.
+
+excluded_signers:
+  - "david attenborough"     # 26% sale-event running from 2026-05-06
+  - "sir david attenborough"

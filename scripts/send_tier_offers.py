@@ -74,9 +74,49 @@ def _build_plan() -> list[dict]:
             prices[r["item_id"]] = r["price_gbp"]
             titles[r["item_id"]] = r["title"]
 
+    # Backfill missing prices via GetItem (cache miss = recently listed).
+    # Pre-50k quota this would have been too costly; with the lifted cap
+    # we can afford it and stop silently dropping ~95% of eligible items.
+    missing = [lid for lid in eligible if lid not in prices]
+    if missing:
+        from ebay_api import trading
+        print(f"  fetching {len(missing)} prices not in audit cache…")
+        for lid in missing:
+            try:
+                raw = trading.get_item(lid, include_description=False)
+                price_str = (raw.get("StartPrice")
+                             or raw.get("BuyItNowPrice")
+                             or raw.get("SellingStatus", {}).get("CurrentPrice"))
+                if isinstance(price_str, dict):
+                    price_str = price_str.get("_text") or price_str.get("text")
+                if price_str:
+                    prices[lid] = float(str(price_str).replace(",", ""))
+                titles.setdefault(lid, raw.get("Title", ""))
+            except Exception as e:
+                print(f"    GetItem {lid}: {str(e)[:80]}")
+
+    # Per-signer exclusions — read each run so edits take effect immediately
+    # without a restart. When Kim's running a sale-event promo on a signer,
+    # we don't stack a SOTIB discount on top.
+    import yaml as _yaml
+    from pathlib import Path as _Path
+    excl_path = _Path(__file__).resolve().parent.parent / "presets" / "sotib_exclusions.yaml"
+    excluded_signers: list[str] = []
+    if excl_path.exists():
+        try:
+            cfg = _yaml.safe_load(excl_path.read_text()) or {}
+            excluded_signers = [s.lower() for s in (cfg.get("excluded_signers") or [])]
+        except Exception:
+            pass
+    if excluded_signers:
+        print(f"  excluding {len(excluded_signers)} signer(s) currently in sale: "
+              f"{', '.join(excluded_signers)}")
+
     plan: list[dict] = []
     skipped_under_10 = 0
     skipped_no_price = 0
+    skipped_excluded = 0
+    mug_capped = 0
     for lid in eligible:
         price = prices.get(lid)
         if price is None:
@@ -84,6 +124,22 @@ def _build_plan() -> list[dict]:
             continue
         if price < 10:
             skipped_under_10 += 1
+            continue
+        title_lc = (titles.get(lid) or "").lower()
+        # Excluded signer (sale-event running) — no offer at all.
+        if any(s in title_lc for s in excluded_signers):
+            skipped_excluded += 1
+            continue
+        # Mugs have tight margins — cap at 5% off regardless of tier.
+        if "mug" in title_lc:
+            mug_capped += 1
+            plan.append({
+                "listingId":          lid,
+                "price":              price,
+                "tier":               "MUG",
+                "discountPercentage": "5",
+                "title":              titles.get(lid, ""),
+            })
             continue
         tier = _tier_for_price(price)
         if tier is None:
@@ -98,6 +154,8 @@ def _build_plan() -> list[dict]:
         })
     print(f"  under £10 (skipped): {skipped_under_10}")
     print(f"  no price in cache:   {skipped_no_price}")
+    print(f"  excluded signers:    {skipped_excluded}")
+    print(f"  mugs (5% cap):       {mug_capped}")
     print(f"  will send offers:    {len(plan)}")
     return plan
 

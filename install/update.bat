@@ -5,7 +5,10 @@ REM ========================================================================
 REM KLH Dashboard one-click updater (Windows).
 REM
 REM What it does:
-REM   1. cd into the klh-listing-tool repo
+REM   1. Auto-discover repo: this script lives in <repo>\install\, so we
+REM      resolve the repo as the parent of the script's directory. No more
+REM      hardcoded paths — works regardless of where the repo is installed
+REM      (Documents\, C:\KLH\, Desktop\, etc.).
 REM   2. git pull (gets latest code + extra_images)
 REM   3. Rewrites the extra_images_dir line in ~/.klh/config.yaml so it
 REM      points at the in-repo path on THIS PC
@@ -19,7 +22,14 @@ echo   KLH Dashboard updater
 echo ============================================================
 echo.
 
-set "REPO=%USERPROFILE%\Documents\klh-listing-tool"
+REM Resolve repo as the parent dir of this script's location.
+REM %~dp0 = directory of this batch file, with trailing backslash.
+set "SCRIPT_DIR=%~dp0"
+REM Strip trailing backslash so .. resolution is clean.
+if "%SCRIPT_DIR:~-1%"=="\" set "SCRIPT_DIR=%SCRIPT_DIR:~0,-1%"
+REM Repo is one level up from install\.
+for %%I in ("%SCRIPT_DIR%\..") do set "REPO=%%~fI"
+
 set "CONFIG=%USERPROFILE%\.klh\config.yaml"
 set "TARGET=%REPO%\extra_images"
 
@@ -31,7 +41,7 @@ echo.
 
 if not exist "%REPO%\.git" (
     echo [ERROR] Repo not found at: %REPO%
-    echo Make sure the dashboard is installed in Documents\klh-listing-tool
+    echo This script must live inside the repo's install\ folder.
     pause
     exit /b 1
 )

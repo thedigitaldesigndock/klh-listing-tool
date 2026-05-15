@@ -741,10 +741,35 @@ def build_listing(
         raise PresetsError("build_listing: `name` is required")
 
     # Subject defaults: prefer explicit, then knowledge.yaml's
-    # per-category subject slug, then the hard-coded "default".
+    # per-category subject slug, then ERROR (used to silently fall to
+    # `default` = cat 27290 football, which silently mis-categorised
+    # any listing whose filename was missing the `_Genre` token —
+    # 600+ listings cleaned up across 12-15 May 2026).
+    #
+    # The error is recovered in the wizard UI: Nicky/Kim sees a clear
+    # "filename needs _TV / _Film / _Music / _Football / etc." rather
+    # than a successful-looking listing that lands in football cat.
     if subject is None:
+        if category is None:
+            raise PresetsError(
+                "Filename is missing the genre token. "
+                "Add one of "
+                "_TV / _Film / _Music / _Football / _Rugby / _Cricket / "
+                "_F1 / _Boxing / _Golf / _Tennis / _Snooker / _Darts / "
+                "_NFL / _NBA / _MMA / _Comedy / _Drama / _Rock / _Pop / _Indie "
+                "to the end of the filename "
+                "(e.g. 'Richard O'Brien_Rocky Horror Picture Show_Film.jpg')."
+            )
         rule = bundle.category_rule(category)
-        subject = rule.get("subject") or "default"
+        subject = rule.get("subject")
+        if not subject:
+            valid = sorted((bundle.knowledge.get("categories") or {}).keys())
+            raise PresetsError(
+                f"Unrecognised genre token {category!r} in filename. "
+                f"Valid tokens: {', '.join(valid)}. "
+                f"(Rename the file with one of these at the end, e.g. "
+                f"'Name_Show_TV.jpg' or 'Name_Film.jpg'.)"
+            )
 
     # ---- Render the human-visible bits ---------------------------------
     title = render_title(

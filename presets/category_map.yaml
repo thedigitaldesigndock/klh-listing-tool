@@ -1,0 +1,144 @@
+# ============================================================================
+# Canonical (signer_genre × product_type) → eBay category_id map.
+#
+# Used by scripts/plan_recat.py to decide where each listing SHOULD live,
+# based on:
+#   * signer_genre  — a per-signer classification (see signer_genre.yaml)
+#   * product_type  — auto-detected from title keywords (see
+#                     scripts/plan_recat.py PRODUCT_PATTERNS)
+#
+# Each entry: target category_id + the canonical category_name so the
+# recat preview can show the destination alongside the move count.
+#
+# "??" values mean we haven't confirmed that cat yet — leave the listing
+# alone until Peter confirms. The recat planner surfaces unknowns in a
+# "needs_mapping" bucket rather than guessing.
+#
+# Last updated: 2026-04-19 — initial draft, iterating as the category
+# refresh (scripts/refresh_categories.py) surfaces more cats in the cache.
+# ============================================================================
+
+genres:
+  football_retired:     "Players whose career ended pre-Premier-League era (BR, TS, Jennings, Keegan)"
+  football_premiership: "Current / recent Premier League players"
+  football_international: "Pure national-team signatures (no club)"
+  tv_male:              "Male TV personality (Clarkson, Martin Clunes)"
+  tv_female:            "Female TV personality (Joanna Lumley, Erin Gray)"
+  film_male:            "Male film actor (Dan Aykroyd, Tim Allen, Jackie Chan)"
+  film_female:          "Female film actress"
+  music:                "Musicians, band members"
+  comedy:               "Stand-ups, comedians where not TV-specific"
+  sport_cricket:
+  sport_tennis:
+  sport_golf:
+  sport_boxing:
+  sport_f1:             "(Mario Andretti belongs here)"
+  sport_basketball:     "(Shaquille O'Neal)"
+  sport_cycling:        "(Bernard Hinault, Eddy Merckx)"
+  sport_rugby_league:   "(Kevin Sinfield)"
+  sport_rugby_union:
+  other:
+
+# ──────────────────────────────────────────────────────────────────────
+# Category destinations.
+# ──────────────────────────────────────────────────────────────────────
+map:
+
+  football_retired:
+    Photo:      { id: "97085", name: "Football:Autographs:Signed Photos:Retired Players" }
+    Shirt:      { id: "27289", name: "Football:Autographs:Signed Shirts:Premiership Players/Clubs" }
+    Card:       { id: "2841",  name: "Football:Autographs:Other Autographs" }
+    Glove:      { id: "2885",  name: "Football:Other Football Memorabilia" }
+    Ball:       { id: "2885",  name: "Football:Other Football Memorabilia" }
+    Boot:       { id: "2885",  name: "Football:Other Football Memorabilia" }
+    Programme:  { id: "2885",  name: "Football:Other Football Memorabilia" }
+    Poster:     { id: "2885",  name: "Football:Other Football Memorabilia" }
+    # DVDs / Books / Records / Scripts / Programmes etc stay in their
+    # existing eBay categories — recat planner skips them.
+
+  football_premiership:
+    Photo:      { id: "27290", name: "Football:Autographs:Signed Photos:Premiership" }
+    Shirt:      { id: "27289", name: "Football:Autographs:Signed Shirts:Premiership" }
+    Card:       { id: "2841",  name: "Football:Autographs:Other Autographs" }
+    Glove:      { id: "2885",  name: "Football:Other Football Memorabilia" }
+    Ball:       { id: "2885",  name: "Football:Other Football Memorabilia" }
+    Boot:       { id: "2885",  name: "Football:Other Football Memorabilia" }
+    Programme:  { id: "2885",  name: "Football:Other Football Memorabilia" }
+    Poster:     { id: "2885",  name: "Football:Other Football Memorabilia" }
+
+  tv_male:
+    Photo:      { id: "35030", name: "Films & TV:TV:Autographs:Male" }
+    Card:       { id: "69536", name: "Collectables:Autographs:Certified Original:TV" }
+
+  tv_female:
+    Photo:      { id: "35031", name: "Films & TV:TV:Autographs:Female" }
+    Card:       { id: "69536", name: "Collectables:Autographs:Certified Original:TV" }
+
+  film_male:
+    Photo:      { id: "35027", name: "Films & TV:Film:Autographs:Male" }
+
+  film_female:
+    Photo:      { id: "35028", name: "Films & TV:Film:Autographs:Female" }
+
+  sport_cricket:
+    Photo:      { id: "6087",  name: "Cricket Memorabilia:Autographs:Other" }
+    Card:       { id: "6087",  name: "Cricket Memorabilia:Autographs:Other" }
+
+  sport_tennis:
+    Photo:      { id: "430",   name: "Tennis Memorabilia" }
+    Card:       { id: "430",   name: "Tennis Memorabilia" }
+
+  sport_golf:
+    Photo:      { id: "1223",  name: "Golf Memorabilia:Autographs" }
+    Card:       { id: "1223",  name: "Golf Memorabilia:Autographs" }
+
+  sport_boxing:
+    Photo:      { id: "550",   name: "Boxing Memorabilia (needs verify)" }
+    Card:       { id: "550",   name: "Boxing Memorabilia (needs verify)" }
+
+  music:
+    Photo:      { id: "2328",  name: "Music:Memorabilia:Other" }
+    Card:       { id: "2328",  name: "Music:Memorabilia:Other" }
+    # Records stay in their existing cat.
+
+  sport_f1:
+    Photo:      { id: "2835",  name: "Motor Sport:Formula 1:Autographs" }
+    Card:       { id: "2835",  name: "Motor Sport:Formula 1:Autographs" }
+
+  sport_basketball:
+    Photo:      { id: "2826",  name: "Basketball Memorabilia:Autographs" }
+    Card:       { id: "2826",  name: "Basketball Memorabilia:Autographs" }
+
+  sport_cycling:
+    Photo:      { id: "2855",  name: "Cycling Memorabilia" }
+    Card:       { id: "2855",  name: "Cycling Memorabilia" }
+
+  sport_rugby_league:
+    Photo:      { id: "68369", name: "Rugby League:Autographs" }
+    Card:       { id: "68369", name: "Rugby League:Autographs" }
+
+  sport_rugby_union:
+    Photo:      { id: "2881",  name: "Rugby Union Memorabilia (needs verify)" }
+    Card:       { id: "2881",  name: "Rugby Union Memorabilia (needs verify)" }
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Product-type detection rules (applied in plan_recat.py in order —
+# first match wins). Kept here so adjustments don't require code edits.
+# ──────────────────────────────────────────────────────────────────────
+product_patterns:
+  - Shirt:     "\\b(shirt|jersey|kit|strip)\\b"
+  - DVD:       "\\bdvd\\b"
+  - Book:      "\\b(book|autobiography|hardback|paperback)\\b"
+  - Programme: "\\b(programme|program)\\b"
+  - Glove:     "\\bglove"
+  - Ball:      "\\b(match\\s*ball|signed\\s*ball|mini\\s*ball)\\b"
+  - Boot:      "\\bboot"
+  - Record:    "\\b(vinyl|record|lp|album)\\b"
+  - Poster:    "\\bposter\\b"
+  - Script:    "\\bscript\\b"
+  - Flag:      "\\bflag\\b"
+  - Cap:       "\\bcap\\b"
+  - Postcard:  "\\b(postcard|post\\s*card)\\b"
+  - Card:      "\\b(white\\s*card|index\\s*card|5x3|\\bcard\\b)"
+  - Photo:     ".*"   # default fallback

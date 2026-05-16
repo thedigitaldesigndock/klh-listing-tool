@@ -51,3 +51,4 @@ working/
 !extra_images/**/*.jpeg
 !extra_images/**/*.png
 !extra_images/**/*.webp
+.wrangler/

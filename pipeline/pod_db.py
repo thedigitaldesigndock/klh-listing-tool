@@ -60,13 +60,22 @@ STATUS_SHIPPED = "shipped"
 STATUS_SYNCED = "synced"
 STATUS_CANCELLED = "cancelled"
 STATUS_FAILED = "failed"
+STATUS_AWAITING_REVIEW = "awaiting_review"   # custom mugs, human approval needed
+STATUS_REJECTED = "rejected"                  # reviewer rejected, do not fulfil
+
+# Fulfilment mode for custom orders
+FULFILLMENT_POD = "pod"          # default — push to 215
+FULFILLMENT_INHOUSE = "inhouse"  # print locally, manual tracking
 
 ALL_STATUSES = frozenset(
     {STATUS_PENDING, STATUS_SUBMITTED, STATUS_SHIPPED,
-     STATUS_SYNCED, STATUS_CANCELLED, STATUS_FAILED}
+     STATUS_SYNCED, STATUS_CANCELLED, STATUS_FAILED,
+     STATUS_AWAITING_REVIEW, STATUS_REJECTED}
 )
 
-TERMINAL_STATUSES = frozenset({STATUS_SYNCED, STATUS_CANCELLED, STATUS_FAILED})
+TERMINAL_STATUSES = frozenset(
+    {STATUS_SYNCED, STATUS_CANCELLED, STATUS_FAILED, STATUS_REJECTED}
+)
 
 
 _SCHEMA = """
@@ -117,6 +126,9 @@ CREATE INDEX IF NOT EXISTS idx_pod_submit_after   ON pod_orders(submit_after);
 CREATE INDEX IF NOT EXISTS idx_pod_215_id         ON pod_orders(twofifteen_order_id);
 CREATE INDEX IF NOT EXISTS idx_pod_listing        ON pod_orders(listing_ref);
 
+-- Custom-mug fields (added for human-in-the-loop review flow).
+-- Using ALTER TABLE so existing databases pick the columns up on next connect.
+
 CREATE TABLE IF NOT EXISTS meta (
     key   TEXT PRIMARY KEY,
     value TEXT
@@ -162,12 +174,42 @@ def connect(
     try:
         if not readonly:
             conn.executescript(_SCHEMA)
+            _run_migrations(conn)
             set_meta(conn, "schema_version", str(SCHEMA_VERSION))
         yield conn
         if not readonly:
             conn.commit()
     finally:
         conn.close()
+
+
+# --------------------------------------------------------------------------- #
+# Migrations — add columns to existing DBs without breaking the base schema.
+# Each call to _run_migrations is idempotent; ALTER TABLE ADD COLUMN is a
+# no-op when the column already exists (we check via PRAGMA first).
+# --------------------------------------------------------------------------- #
+
+_CUSTOM_COLUMNS = [
+    ("is_custom",              "INTEGER NOT NULL DEFAULT 0"),
+    ("fulfillment_mode",       f"TEXT DEFAULT '{FULFILLMENT_POD}'"),
+    ("wrap_png_path",          "TEXT"),
+    ("personalisation_name",   "TEXT"),
+    ("personalisation_number", "TEXT"),
+    ("custom_team",            "TEXT"),
+    ("custom_era",             "TEXT"),
+    ("reviewed_at",            "TEXT"),
+    ("reviewed_by",            "TEXT"),
+    ("review_notes",           "TEXT"),
+]
+
+
+def _run_migrations(conn: sqlite3.Connection) -> None:
+    existing = {
+        row[1] for row in conn.execute("PRAGMA table_info(pod_orders)").fetchall()
+    }
+    for name, ddl in _CUSTOM_COLUMNS:
+        if name not in existing:
+            conn.execute(f"ALTER TABLE pod_orders ADD COLUMN {name} {ddl}")
 
 
 # --------------------------------------------------------------------------- #

@@ -1,0 +1,10 @@
+name = "klh-ebay-notify"
+main = "worker.js"
+compatibility_date = "2025-01-01"
+
+# Non-secret env vars. VERIFICATION_TOKEN is also non-secret (eBay treats
+# it as a shared value in the challenge hash, not a secret), so we set it
+# here too — simpler than Wrangler secrets.
+[vars]
+ENDPOINT_URL = "https://klh-ebay-notify.klhautographs.workers.dev/"
+VERIFICATION_TOKEN = "0aTxRADdB6Ho3TXNacDK8A7xtLQcnuk5qzAe9AmO4L2etKMZ-GaXYA"

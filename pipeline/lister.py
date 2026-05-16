@@ -537,20 +537,22 @@ def build_revise_item_xml(
     new_title: Optional[str] = None,
     new_specifics_replace: Optional[dict[str, str]] = None,
     new_category_id: Optional[str] = None,
+    new_condition_id: Optional[int] = None,
 ) -> str:
     """
     Build the inner XML for ReviseFixedPriceItem. Only fields explicitly
     provided are included — eBay treats unsent elements as "leave alone".
 
-    At least one of new_title / new_specifics_replace / new_category_id
-    must be truthy (otherwise there's nothing to revise).
+    At least one of new_title / new_specifics_replace / new_category_id /
+    new_condition_id must be truthy (otherwise there's nothing to revise).
     """
     if not item_id:
         raise ListerError("revise: item_id is required")
-    if new_title is None and new_specifics_replace is None and new_category_id is None:
+    if (new_title is None and new_specifics_replace is None
+            and new_category_id is None and new_condition_id is None):
         raise ListerError(
             "revise: nothing to change — pass new_title, new_specifics_replace, "
-            "or new_category_id"
+            "new_category_id, or new_condition_id"
         )
     if new_title is not None:
         if not new_title:
@@ -570,6 +572,8 @@ def build_revise_item_xml(
         parts.append("<PrimaryCategory>")
         parts.append(_el("CategoryID", str(new_category_id)))
         parts.append("</PrimaryCategory>")
+    if new_condition_id is not None:
+        parts.append(_el("ConditionID", str(int(new_condition_id))))
     if new_specifics_replace is not None:
         parts.append(_revise_specifics_xml(new_specifics_replace))
     parts.append("</Item>")
@@ -600,6 +604,7 @@ def revise_listing(
     new_title: Optional[str] = None,
     new_specifics_replace: Optional[dict[str, str]] = None,
     new_category_id: Optional[str] = None,
+    new_condition_id: Optional[int] = None,
     confirm: bool = False,
 ) -> dict[str, Any]:
     """
@@ -622,6 +627,7 @@ def revise_listing(
         new_title=new_title,
         new_specifics_replace=new_specifics_replace,
         new_category_id=new_category_id,
+        new_condition_id=new_condition_id,
     )
     root = trading_call("ReviseFixedPriceItem", inner)
     return {

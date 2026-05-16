@@ -113,6 +113,10 @@ item_specifics:
   "Perfect For":           "Gift Present Birthday Christmas Memorabilia Collectible Display"
   "More In Our Shop":      "Full Range In Store A4 10x8 12x8 16x12 Mount Frame Photo Card"
   "Also Known As":         "Merch Merchandise Print Poster Autographed Auto Signature Gift"
+  # Photograph / image keyword bundle — catches "photograph", "picture",
+  # "image", "print", "poster" search terms that don't fit in the title.
+  # 63 chars (eBay value limit = 65).
+  "Photograph":            "Yes Original Hand Signed Picture Image Photo Print Poster"
 
 # Description template (HTML). The body lives in description_template.html
 # and is loaded alongside this file. The only required placeholder is

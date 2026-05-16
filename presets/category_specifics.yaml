@@ -38,6 +38,12 @@ _football_signed_photos: &football_signed_photos
   Options:  "Premiership Players/ Clubs"
   Sub-Type: "Photograph"
 
+# Films & TV signed-photo overlays. Shared between TV + Film signed-photo
+# categories — the relevant fields are Object/Sub-Type, no sport or club.
+_tv_signed_photos: &tv_signed_photos
+  Object:    "Signed Photo"
+  Sub-Type:  "Photograph"
+
 category_specifics:
   # Sports Mem > Football Mem > Autographs (Original) > Signed Photos: Retired Players
   "97085": *football_signed_photos
@@ -51,8 +57,11 @@ category_specifics:
     Sport:  "Football"
     Object: "Signed Photo"
 
-  # Add more categories here as we encounter them:
-  #   "97086" — Signed Shirts, etc.
-  #   "35030" — Films & TV (needs Character/Show/etc. — different schema)
-  #   "35028" — Films & TV Female
-  # See pipeline/taxonomy.py (TBD) for the automated discovery path.
+  # Films & TV > TV Memorabilia > Autographs (Original Certified) > Male
+  "35030": *tv_signed_photos
+  # Films & TV > Film Memorabilia > Autographs (Original Certified) > Female
+  "35028": *tv_signed_photos
+  # Films & TV > Film Memorabilia > Autographs (Original Certified) > Male
+  "35027": *tv_signed_photos
+  # Collectables > Autographs > Certified Original Autographs > TV
+  "69536": *tv_signed_photos

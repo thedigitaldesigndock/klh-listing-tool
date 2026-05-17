@@ -162,8 +162,20 @@ def _plan() -> dict:
             "expected": expected, "current": current}
 
 
+# eBay error ids that mean "this listing is no longer biddable for ads".
+# When we see one, we null the listing_type on the audit DB row so the
+# next run's plan excludes it. Without this, the script tries the same
+# dead listing every hour, every day, forever — until somebody notices.
+_LISTING_DEAD_ERROR_IDS = {
+    35037,  # "The listing associated with listing ID X has ended."
+}
+
+
 def _apply_plan(plan: dict) -> None:
     actions = plan["actions"]
+    # Listing IDs eBay tells us are dead during this run. We self-heal
+    # the audit DB at the end so we don't retry them next hour.
+    ended_ids: list[str] = []
 
     # 1. REMOVE (listings excluded now) — delete ads
     if actions["remove"]:
@@ -216,6 +228,34 @@ def _apply_plan(plan: dict) -> None:
             batch_size=500, sleep_between=1.0, progress=_progress,
         )
         print(f"  done: ok={agg['ok']} failed={agg['failed']}")
+
+        # Surface per-listing failures so we don't have to dig into the
+        # JSON next time something fails. Previously we'd just see
+        # "failed=1" with no clue what went wrong.
+        for f in agg.get("failures") or []:
+            errs = f.get("errors") or []
+            err_id = errs[0].get("errorId") if errs else None
+            err_msg = errs[0].get("message", "") if errs else "(no detail)"
+            lid = f.get("listing_id")
+            print(f"    ✗ {lid}: [errorId={err_id}] {err_msg}")
+            if err_id in _LISTING_DEAD_ERROR_IDS:
+                ended_ids.append(str(lid))
+
+    # Self-heal: mark dead listings in audit DB so we don't keep
+    # attempting them every cron tick. The plan() filter already
+    # excludes rows where listing_type IS NULL.
+    if ended_ids:
+        unique = sorted(set(ended_ids))
+        print(f"\nSelf-heal: marking {len(unique)} ended listing(s) "
+              f"in audit DB (errorId 35037 from eBay)…")
+        with audit_db.connect() as conn:
+            conn.executemany(
+                "UPDATE listings SET listing_type = NULL WHERE item_id = ?",
+                [(lid,) for lid in unique],
+            )
+            conn.commit()
+        for lid in unique:
+            print(f"    cleared listing_type for {lid}")
 
 
 def main() -> int:

@@ -1099,21 +1099,23 @@ body:not(.mockup-mode) .mockup-only-el { display: none !important; }
   position: relative;
   z-index: 2;
 }
-/* Individual file rows + the × delete + Clear-all explicitly receive
-   clicks — they're the only places inside the drop zone that aren't
-   the file picker. */
-.scan-drop-file,
-.scan-drop-file .del,
-.scan-drop-actions .btn,
-.scan-drop-empty {
-  pointer-events: auto;
+/* File rows: the ROW itself passes clicks through to the input below
+   (so clicking the row's text/blank space opens the file picker, just
+   like clicking the empty area does). Only the × delete button traps
+   its own click — that's the one element where the user genuinely
+   means "act on this file, not upload new ones". */
+.scan-drop-file {
+  pointer-events: none;
 }
-/* File rows and clear-all have their own cursors; the file picker is
-   only on the empty area + label + CTA text. */
-.scan-drop-file,
-.scan-drop-actions,
-.scan-drop-empty {
-  cursor: default;
+.scan-drop-file .del {
+  pointer-events: auto;
+  cursor: pointer;
+}
+/* Same idea for Clear-all: only the button itself catches clicks,
+   the surrounding row passes through. */
+.scan-drop-actions .btn {
+  pointer-events: auto;
+  cursor: pointer;
 }
 .scan-drop-label {
   font-weight: 600;

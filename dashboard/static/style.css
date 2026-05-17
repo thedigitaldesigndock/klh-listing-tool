@@ -1079,15 +1079,37 @@ body:not(.mockup-mode) .mockup-only-el { display: none !important; }
   padding: 0;
   border: 0;
 }
+/* Header / CTA always sit above the input so the text reads cleanly. */
 .scan-drop-label,
-.scan-drop-cta,
-.scan-drop-files,
+.scan-drop-cta {
+  position: relative;
+  z-index: 2;
+  pointer-events: none;   /* don't block clicks reaching the input */
+}
+/* The files container is a flex:1 region that fills empty space below
+   the CTA. We CAN'T let it block clicks to the input below, so the
+   container itself is pointer-events:none and individual rows/buttons
+   re-enable their own pointer events. */
+.scan-drop-files {
+  position: relative;
+  z-index: 2;
+  pointer-events: none;
+}
 .scan-drop-actions {
   position: relative;
   z-index: 2;
 }
-/* File list rows and Clear-all are NOT clickable file-picker targets;
-   keep the default cursor and let their own buttons handle clicks. */
+/* Individual file rows + the × delete + Clear-all explicitly receive
+   clicks — they're the only places inside the drop zone that aren't
+   the file picker. */
+.scan-drop-file,
+.scan-drop-file .del,
+.scan-drop-actions .btn,
+.scan-drop-empty {
+  pointer-events: auto;
+}
+/* File rows and clear-all have their own cursors; the file picker is
+   only on the empty area + label + CTA text. */
 .scan-drop-file,
 .scan-drop-actions,
 .scan-drop-empty {

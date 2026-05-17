@@ -1080,7 +1080,11 @@
       // rendered templates, /api/scan-image/... for photo-only products).
       // mockup_path is the raw filesystem path — kept for debugging only,
       // NOT used as an <img src> because browsers can't load file://.
-      row.mockup_url   = data.mockup_url || null;
+      // Append a fresh ?t=<ms> on every render so the browser never
+      // serves a cached pre-render image even if Cache-Control gets
+      // overridden by an upstream proxy.
+      const rawUrl = data.mockup_url || null;
+      row.mockup_url = rawUrl ? `${rawUrl}${rawUrl.includes("?") ? "&" : "?"}t=${Date.now()}` : null;
       row.mockup_path  = data.mockup_path;
       row.is_raw_photo = !!data.is_raw_photo;
       if (row.is_raw_photo) {

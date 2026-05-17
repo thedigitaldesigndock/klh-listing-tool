@@ -89,6 +89,50 @@ def _get_markdown_listing_ids() -> set[str]:
     return out
 
 
+def _signer_from_title(title: str) -> str:
+    """Extract the shortest stable signer-name form from a listing title.
+    "Sir David Attenborough Hand Signed A4 Photo …" → "david attenborough"
+    Stripping the honorific lets the substring-match catch BOTH variants
+    in eligible titles (with and without the title).
+    """
+    if not title:
+        return ""
+    # Everything before the first "Signed" is the signer (plus maybe " Hand").
+    head = title.split("Signed", 1)[0].rstrip().lower()
+    if head.endswith(" hand"):
+        head = head[:-5].rstrip()
+    # Strip leading honorific so the substring match catches both forms.
+    for honor in ("sir ", "dame ", "lord ", "lady ", "dr ", "rev "):
+        if head.startswith(honor):
+            head = head[len(honor):]
+            break
+    return head.strip()
+
+
+def _signers_in_active_markdowns(markdown_ids: set[str]) -> set[str]:
+    """Auto-derive signer-name exclusions from titles of listings in
+    active markdown sales. Replaces the old manually-managed
+    sotib_exclusions.yaml — the YAML kept catching Kim a week after a
+    sale ended because nobody (me included) cleared the entry. Now the
+    source of truth is "what's actually in a RUNNING markdown promo
+    right now," so the exclusion auto-clears the second the sale ends.
+    """
+    if not markdown_ids:
+        return set()
+    signers: set[str] = set()
+    with audit_db.connect(readonly=True) as conn:
+        placeholders = ",".join("?" * len(markdown_ids))
+        rows = conn.execute(
+            f"SELECT title FROM listings WHERE item_id IN ({placeholders})",
+            list(markdown_ids),
+        ).fetchall()
+        for r in rows:
+            s = _signer_from_title(r["title"] or "")
+            if s:
+                signers.add(s)
+    return signers
+
+
 def _build_plan() -> list[dict]:
     """For each eligible listing, compute tier + offer. Returns ready-to-send list."""
     print("Fetching eligible listings from Negotiation API…")
@@ -134,22 +178,51 @@ def _build_plan() -> list[dict]:
             except Exception as e:
                 print(f"    GetItem {lid}: {str(e)[:80]}")
 
-    # Per-signer exclusions — read each run so edits take effect immediately
-    # without a restart. When Kim's running a sale-event promo on a signer,
-    # we don't stack a SOTIB discount on top.
+    # Per-signer exclusions — auto-derived from titles of listings in active
+    # markdown sales. When Kim runs a markdown promo on Attenborough, all of
+    # his listings in the promo carry his name in the title; we extract the
+    # set of names and exclude any eligible listing matching one of them.
+    # Auto-clears the second the markdown ends — no YAML to forget about.
+    excluded_signers = sorted(_signers_in_active_markdowns(on_markdown))
+    if excluded_signers:
+        print(f"  excluding {len(excluded_signers)} signer(s) auto-derived "
+              f"from active markdown listings: {', '.join(excluded_signers)}")
+
+    # Manual override fallback (deprecated). Honoured ONLY for entries with
+    # an `until: YYYY-MM-DD` value that hasn't passed — entries without a date
+    # are ignored and warned about. This is the escape hatch for sales Kim
+    # runs WITHOUT using eBay's markdown promo (e.g. hand-edited prices).
     import yaml as _yaml
     from pathlib import Path as _Path
+    from datetime import date as _date
     excl_path = _Path(__file__).resolve().parent.parent / "presets" / "sotib_exclusions.yaml"
-    excluded_signers: list[str] = []
     if excl_path.exists():
         try:
             cfg = _yaml.safe_load(excl_path.read_text()) or {}
-            excluded_signers = [s.lower() for s in (cfg.get("excluded_signers") or [])]
-        except Exception:
-            pass
-    if excluded_signers:
-        print(f"  excluding {len(excluded_signers)} signer(s) currently in sale: "
-              f"{', '.join(excluded_signers)}")
+            today = _date.today()
+            manual: list[str] = []
+            for entry in (cfg.get("excluded_signers") or []):
+                if isinstance(entry, dict):
+                    name = (entry.get("name") or "").lower().strip()
+                    until = entry.get("until")
+                    if not name:
+                        continue
+                    if until and _date.fromisoformat(str(until)) >= today:
+                        manual.append(name)
+                    else:
+                        print(f"  WARN: manual exclusion {name!r} has expired "
+                              f"or has no `until:` date — ignoring")
+                else:
+                    print(f"  WARN: manual exclusion {entry!r} has no "
+                          f"`until: YYYY-MM-DD` — ignoring (use the new "
+                          f"`- {{name: ..., until: ...}}` format)")
+            if manual:
+                print(f"  + {len(manual)} manual override(s): {', '.join(manual)}")
+                for m in manual:
+                    if m not in excluded_signers:
+                        excluded_signers.append(m)
+        except Exception as e:
+            print(f"  WARN: couldn't parse sotib_exclusions.yaml: {str(e)[:80]}")
 
     plan: list[dict] = []
     skipped_under_10 = 0

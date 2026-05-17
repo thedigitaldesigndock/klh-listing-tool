@@ -1,23 +1,24 @@
-# SOTIB signer exclusions.
+# SOTIB signer exclusions — MANUAL OVERRIDE FALLBACK (rarely needed)
 #
-# When Kim runs a sale-event promo (e.g. "26% off all David Attenborough"),
-# her existing margin is already cut. Stacking a tier-aware SOTIB on top
-# (BUDGET 18% / STANDARD 15% / PREMIUM 12% / PREMIUM_PLUS 10%) creates a
-# double-discount that:
-#   - eats too much margin
-#   - annoys buyers who just paid the sale price (they get an offer email
-#     for a different listing of the same signer at a further % off)
+# Primary exclusion mechanism is now auto-derived: send_tier_offers reads
+# the titles of every listing currently in a RUNNING markdown sale and
+# auto-excludes any eligible listing whose title contains one of those
+# signer names. The exclusion auto-clears the moment the markdown ends —
+# no human in the loop.
 #
-# Add the signer to this list while the sale is running. send_tier_offers
-# reads the file every run, so an edit takes effect on the next 2-hourly
-# fire — no restart needed.
+# This file is now only for the escape-hatch case: a sale Kim runs
+# WITHOUT using eBay's markdown promo tool (e.g. hand-edited prices on
+# a batch of listings, or a coupon-code sale that doesn't appear in the
+# markdown API). In that case, add an entry like:
 #
-# Match is a case-insensitive substring on the listing title — list
-# both forms when needed (Sir David Attenborough vs David Attenborough)
-# so titles missing the honorific are still excluded.
+#   excluded_signers:
+#     - name: "joanna lumley"
+#       until: 2026-05-25      # ← REQUIRED. Entries with no `until` are
+#                                ignored and warned about.
 #
-# Remove the entry when the sale ends.
+# When `until` passes, the entry stops applying automatically. No more
+# stale exclusions silently killing offers for weeks because someone
+# forgot to clear the file (Attenborough sat here for 11 days post-sale
+# and killed every single eligible offer in that window).
 
-excluded_signers:
-  - "david attenborough"     # 26% sale-event running from 2026-05-06
-  - "sir david attenborough"
+excluded_signers: []

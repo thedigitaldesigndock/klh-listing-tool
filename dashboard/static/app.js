@@ -127,6 +127,7 @@
     });
 
     setupScanUploaders();
+    setupVersionWatcher();
 
     Promise.all([fetchConfig(), fetchCatalog()])
       .then(() => renderGrid())
@@ -135,6 +136,53 @@
         $grid.innerHTML = `<div class="loading">Failed to load: ${escapeHtml(err.message)}</div>`;
       });
   });
+
+  // ---- Version watcher --------------------------------------------- //
+  // Polls /api/version every 60s. When it sees a new sha (i.e. a deploy
+  // has landed), drops a banner asking the user to reload. We never
+  // auto-reload — Kim/Nicky might be mid-listing, and losing scanned
+  // rows would be infuriating. They click when they're ready.
+  function setupVersionWatcher() {
+    let loadedSha = null;
+
+    async function poll() {
+      try {
+        const res = await fetch("/api/version", { cache: "no-store" });
+        if (!res.ok) return;
+        const v = await res.json();
+        const sha = v.sha;
+        if (!sha) return;
+        if (loadedSha === null) {
+          loadedSha = sha;
+          return;
+        }
+        if (sha !== loadedSha) showUpdateBanner();
+      } catch (err) {
+        // Network blip — try again next tick.
+      }
+    }
+
+    poll();
+    setInterval(poll, 60_000);
+  }
+
+  function showUpdateBanner() {
+    if (document.getElementById("klh-update-banner")) return;   // already shown
+    const banner = document.createElement("div");
+    banner.id = "klh-update-banner";
+    banner.innerHTML = `
+      <span>🚀 A new version of the dashboard is available.</span>
+      <button type="button" id="klh-update-reload">Reload now</button>
+      <button type="button" id="klh-update-dismiss" aria-label="Dismiss">&times;</button>
+    `;
+    document.body.appendChild(banner);
+    document.getElementById("klh-update-reload").addEventListener("click", () => {
+      location.reload();
+    });
+    document.getElementById("klh-update-dismiss").addEventListener("click", () => {
+      banner.remove();
+    });
+  }
 
   // ---- Scan uploader (drag-drop + file picker for ONE/TWO) --------- //
   function setupScanUploaders() {

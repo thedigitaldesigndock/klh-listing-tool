@@ -1164,3 +1164,46 @@ body:not(.mockup-mode) .mockup-only-el { display: none !important; }
   opacity: 0.7;
   pointer-events: none;
 }
+
+/* ----- Update available banner ------------------------------------- */
+
+#klh-update-banner {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: #1f4a2e;
+  color: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.18);
+  font-size: 13px;
+  max-width: 380px;
+  animation: klh-banner-in 0.25s ease-out;
+}
+@keyframes klh-banner-in {
+  from { transform: translateY(-12px); opacity: 0; }
+  to   { transform: translateY(0);     opacity: 1; }
+}
+#klh-update-banner button {
+  border: none;
+  background: rgba(255,255,255,0.15);
+  color: white;
+  padding: 5px 10px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+}
+#klh-update-banner button:hover {
+  background: rgba(255,255,255,0.28);
+}
+#klh-update-banner #klh-update-dismiss {
+  background: transparent;
+  padding: 0 6px;
+  font-size: 18px;
+  line-height: 1;
+}

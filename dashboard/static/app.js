@@ -153,6 +153,20 @@
         });
       }
 
+      // Clicking anywhere in the drop area opens the file picker —
+      // EXCEPT clicks on the file list, delete buttons, or the
+      // Clear-all button.
+      drop.addEventListener("click", (e) => {
+        if (e.target.closest(".scan-drop-file") ||
+            e.target.closest(".scan-drop-actions") ||
+            e.target.closest(".scan-drop-link") ||
+            e.target.tagName === "BUTTON" ||
+            e.target.tagName === "INPUT") {
+          return;
+        }
+        if (picker) picker.click();
+      });
+
       // Drag-and-drop.
       ["dragenter", "dragover"].forEach((ev) => {
         drop.addEventListener(ev, (e) => {

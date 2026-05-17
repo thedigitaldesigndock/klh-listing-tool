@@ -1050,10 +1050,21 @@ body:not(.mockup-mode) .mockup-only-el { display: none !important; }
   flex-direction: column;
   gap: 10px;
   min-height: 140px;
+  cursor: pointer;
+}
+.scan-drop:hover {
+  border-color: #94a4be;
+  background: #f7f9fc;
 }
 .scan-drop.dragover {
   border-color: #4a8cff;
   background: #f0f6ff;
+}
+/* File list, delete buttons, and Clear-all use their own cursors so
+   they don't visually invite a picker click. */
+.scan-drop-file,
+.scan-drop-actions {
+  cursor: default;
 }
 .scan-drop-label {
   font-weight: 600;

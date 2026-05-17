@@ -18,13 +18,25 @@ from PIL import Image, ImageDraw, ImageFont
 
 # Where to look for system fonts, in priority order.
 # Cambria isn't always available under the exact name, so we try several
-# common install paths on macOS and fall back to PIL's default.
+# common install paths on macOS, Linux (server), and Windows (Kim/Nicky's
+# PCs). Fall back to PIL's bitmap default ONLY as a last resort —
+# bitmaps ignore the `size` arg and render at ~8px, which is the
+# "names are tiny on the mockup" bug we hit after the server cutover.
 _CAMBRIA_PATHS = [
+    # Linux / server (klh user's home — drop new font files here).
+    Path.home() / ".fonts" / "Cambria-Font-For-MAC.ttf",
+    Path.home() / ".fonts" / "Cambria.ttf",
+    Path.home() / ".fonts" / "cambria.ttf",
+    Path("/usr/share/fonts/truetype/cambria/Cambria.ttf"),
+    Path("/usr/share/fonts/truetype/cambria/cambria.ttf"),
+    # macOS user + system installs.
     Path("/Users/petercowgill/Library/Fonts/Cambria-Font-For-MAC.ttf"),
     Path.home() / "Library/Fonts/Cambria.ttf",
     Path.home() / "Library/Fonts/Cambria-Font-For-MAC.ttf",
     Path("/Library/Fonts/Cambria.ttf"),
-    Path("C:/Windows/Fonts/cambria.ttc"),  # Kim's PC later
+    # Windows (Kim/Nicky's PCs).
+    Path("C:/Windows/Fonts/cambria.ttc"),
+    Path("C:/Windows/Fonts/cambria.ttf"),
 ]
 
 
@@ -36,9 +48,12 @@ def _find_font_file(family: str) -> Optional[Path]:
                 return p
     # Search the usual font dirs as a fallback.
     for root in (
-        Path.home() / "Library/Fonts",
-        Path("/Library/Fonts"),
-        Path("/System/Library/Fonts"),
+        Path.home() / ".fonts",            # Linux user fonts
+        Path("/usr/share/fonts"),          # Linux system fonts
+        Path.home() / "Library/Fonts",     # macOS user fonts
+        Path("/Library/Fonts"),            # macOS system fonts
+        Path("/System/Library/Fonts"),     # macOS bundled
+        Path("C:/Windows/Fonts"),          # Windows
     ):
         if not root.exists():
             continue
@@ -46,16 +61,26 @@ def _find_font_file(family: str) -> Optional[Path]:
             return p
         for p in root.rglob(f"*{family}*.otf"):
             return p
+        for p in root.rglob(f"*{family}*.ttc"):
+            return p
     return None
 
 
 def load_font(family: str, size: int) -> ImageFont.FreeTypeFont:
-    """Load a TTF/OTF font at the given pixel size."""
+    """
+    Load a TTF/OTF font at the given pixel size. Raises if no match
+    is found — `ImageFont.load_default()` returns a bitmap that
+    ignores `size` and renders names at ~8px (the post-server-cutover
+    'tiny names' bug). Failing loud is the right move: a missing font
+    is a deployment problem, not something we should paper over.
+    """
     path = _find_font_file(family)
     if path is None:
-        # Last resort — use PIL default (bitmap). Mockups will look wrong
-        # but the pipeline won't crash during development.
-        return ImageFont.load_default()
+        raise FileNotFoundError(
+            f"font family {family!r} not found in any known location. "
+            f"On Linux, place the TTF in ~/.fonts/. On macOS, install "
+            f"into ~/Library/Fonts/."
+        )
     return ImageFont.truetype(str(path), size=size)
 
 

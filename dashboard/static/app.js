@@ -126,6 +126,8 @@
       else if (e.key === "ArrowRight") stepLightbox(+1);
     });
 
+    setupScanUploaders();
+
     Promise.all([fetchConfig(), fetchCatalog()])
       .then(() => renderGrid())
       .catch(err => {
@@ -133,6 +135,155 @@
         $grid.innerHTML = `<div class="loading">Failed to load: ${escapeHtml(err.message)}</div>`;
       });
   });
+
+  // ---- Scan uploader (drag-drop + file picker for ONE/TWO) --------- //
+  function setupScanUploaders() {
+    ["one", "two"].forEach((dir) => {
+      const drop   = document.getElementById(`drop-${dir}`);
+      const picker = document.getElementById(`picker-${dir}`);
+      const clear  = document.getElementById(`clear-${dir}`);
+      if (!drop) return;
+
+      // Browse via file picker.
+      if (picker) {
+        picker.addEventListener("change", (e) => {
+          const files = e.target.files;
+          if (files && files.length) uploadScans(dir, files);
+          picker.value = "";   // reset so re-picking the same file fires again
+        });
+      }
+
+      // Drag-and-drop.
+      ["dragenter", "dragover"].forEach((ev) => {
+        drop.addEventListener(ev, (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          drop.classList.add("dragover");
+        });
+      });
+      ["dragleave", "drop"].forEach((ev) => {
+        drop.addEventListener(ev, (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          drop.classList.remove("dragover");
+        });
+      });
+      drop.addEventListener("drop", (e) => {
+        const files = e.dataTransfer?.files;
+        if (files && files.length) uploadScans(dir, files);
+      });
+
+      // Clear all.
+      if (clear) {
+        clear.addEventListener("click", () => {
+          if (!confirm(`Delete ALL scans in ${dir.toUpperCase()}? This cannot be undone.`)) return;
+          clearScansDir(dir);
+        });
+      }
+    });
+
+    refreshScansList();
+  }
+
+  async function refreshScansList() {
+    try {
+      const res = await fetch("/api/scans/list");
+      if (!res.ok) return;
+      const data = await res.json();
+      renderScanList("one", data.one || []);
+      renderScanList("two", data.two || []);
+    } catch (err) {
+      console.warn("scans/list failed:", err);
+    }
+  }
+
+  function renderScanList(dir, files) {
+    const wrap  = document.getElementById(`files-${dir}`);
+    const clear = document.getElementById(`clear-${dir}`);
+    if (!wrap) return;
+    if (!files.length) {
+      wrap.innerHTML = `<div class="muted scan-drop-empty">no files yet</div>`;
+      if (clear) clear.disabled = true;
+      return;
+    }
+    if (clear) clear.disabled = false;
+    wrap.innerHTML = files.map(f => `
+      <div class="scan-drop-file" data-name="${escapeHtml(f.name)}">
+        <span class="name">${escapeHtml(f.name)}</span>
+        <span class="size">${formatSize(f.size)}</span>
+        <button class="del" type="button" title="Delete this scan" aria-label="Delete">&times;</button>
+      </div>
+    `).join("");
+    wrap.querySelectorAll(".scan-drop-file").forEach(el => {
+      el.querySelector(".del").addEventListener("click", () => {
+        const name = el.dataset.name;
+        deleteScanFile(dir, name);
+      });
+    });
+  }
+
+  function formatSize(bytes) {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+    return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  }
+
+  async function uploadScans(dir, fileList) {
+    const drop = document.getElementById(`drop-${dir}`);
+    if (drop) drop.classList.add("uploading");
+    const form = new FormData();
+    form.append("dir", dir);
+    for (const f of fileList) form.append("files", f, f.name);
+    try {
+      const res = await fetch("/api/scans/upload", { method: "POST", body: form });
+      if (!res.ok) {
+        const txt = await res.text();
+        alert(`Upload failed: HTTP ${res.status}\n${txt.slice(0, 300)}`);
+        return;
+      }
+      const data = await res.json();
+      if (data.skipped && data.skipped.length) {
+        console.warn("Skipped some files:", data.skipped);
+        alert(`Skipped ${data.skipped.length} file(s):\n` +
+              data.skipped.map(s => `${s.name}: ${s.reason}`).join("\n"));
+      }
+      await refreshScansList();
+    } catch (err) {
+      console.error("upload failed:", err);
+      alert(`Upload error: ${err.message}`);
+    } finally {
+      if (drop) drop.classList.remove("uploading");
+    }
+  }
+
+  async function deleteScanFile(dir, name) {
+    try {
+      const url = `/api/scans/file?dir=${encodeURIComponent(dir)}&name=${encodeURIComponent(name)}`;
+      const res = await fetch(url, { method: "DELETE" });
+      if (!res.ok) {
+        const txt = await res.text();
+        alert(`Delete failed: ${res.status}\n${txt}`);
+        return;
+      }
+      await refreshScansList();
+    } catch (err) {
+      alert(`Delete error: ${err.message}`);
+    }
+  }
+
+  async function clearScansDir(dir) {
+    try {
+      const res = await fetch(`/api/scans/clear?dir=${encodeURIComponent(dir)}`, { method: "DELETE" });
+      if (!res.ok) {
+        const txt = await res.text();
+        alert(`Clear failed: ${res.status}\n${txt}`);
+        return;
+      }
+      await refreshScansList();
+    } catch (err) {
+      alert(`Clear error: ${err.message}`);
+    }
+  }
 
   // ---- Fetchers ---------------------------------------------------- //
   async function fetchCatalog() {

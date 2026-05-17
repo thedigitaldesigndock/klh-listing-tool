@@ -46,7 +46,7 @@ from typing import Any, Optional
 import io
 import zipfile
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, UploadFile, File, Form
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -907,3 +907,156 @@ def register_workflow_routes(app: FastAPI) -> None:
             "picture_urls": picture_urls,
             "summary":      _listing_summary(listing),
         })
+
+    # ------------------------------------------------------------------ #
+    # Scan upload + management — lets Kim/Nicky drag-drop scans into the
+    # browser instead of saving them to a local synced folder. The files
+    # land in cfg.paths.picture_dir (ONE) or card_dir (TWO), which is
+    # exactly where the existing /api/match scanner already looks, so
+    # the rest of the wizard works unchanged.
+    # ------------------------------------------------------------------ #
+
+    _SCAN_DIRS = {"one", "two"}
+    _IMAGE_EXTS_UPLOAD = {".jpg", ".jpeg", ".png", ".webp"}
+
+    def _resolve_scan_dir(dir_name: str) -> Path:
+        """Return the configured Path for 'one' or 'two', or raise 400."""
+        if dir_name not in _SCAN_DIRS:
+            raise HTTPException(status_code=400,
+                                detail=f"dir must be 'one' or 'two', got {dir_name!r}")
+        try:
+            cfg = pcfg.load()
+        except pcfg.ConfigError as e:
+            raise HTTPException(status_code=500, detail=str(e))
+        target = cfg.paths.picture_dir if dir_name == "one" else cfg.paths.card_dir
+        if not target:
+            raise HTTPException(status_code=500,
+                                detail=f"no path configured for {dir_name}")
+        target.mkdir(parents=True, exist_ok=True)
+        return target
+
+    def _safe_scan_name(name: str) -> str:
+        """
+        Reject path-traversal in user-supplied filenames and normalise.
+        Keep underscores/spaces/apostrophes because Nicky's filename
+        convention uses them (e.g. 'Cheryl Ladd_Charlie\\'s Angels_TV.jpg').
+        """
+        if not name or "/" in name or "\\" in name or name.startswith("."):
+            raise HTTPException(status_code=400, detail=f"invalid filename: {name!r}")
+        # Strip any leading/trailing whitespace but keep the rest verbatim.
+        return name.strip()
+
+    @app.get("/api/scans/list")
+    def api_scans_list() -> JSONResponse:
+        """Return current files in ONE and TWO with size + mtime."""
+        out = {"one": [], "two": []}
+        for d in ("one", "two"):
+            try:
+                directory = _resolve_scan_dir(d)
+            except HTTPException:
+                continue
+            try:
+                entries = []
+                for p in sorted(directory.iterdir(), key=lambda x: x.name.lower()):
+                    if not p.is_file():
+                        continue
+                    if p.suffix.lower() not in _IMAGE_EXTS_UPLOAD:
+                        continue
+                    try:
+                        st = p.stat()
+                        entries.append({
+                            "name":  p.name,
+                            "size":  st.st_size,
+                            "mtime": int(st.st_mtime),
+                        })
+                    except OSError:
+                        continue
+                out[d] = entries
+            except FileNotFoundError:
+                pass
+        return JSONResponse({"ok": True, **out})
+
+    @app.post("/api/scans/upload")
+    async def api_scans_upload(
+        dir: str = Form(...),
+        files: list[UploadFile] = File(...),
+    ) -> JSONResponse:
+        """
+        Accept one-or-more file uploads and write them into ONE/TWO on
+        the server. Existing filenames are overwritten — that mirrors how
+        you'd handle a re-scan locally (drag the corrected file over the
+        old one).
+        """
+        target = _resolve_scan_dir(dir)
+        saved = []
+        skipped = []
+        for upload in files:
+            try:
+                fname = _safe_scan_name(upload.filename or "")
+            except HTTPException as e:
+                skipped.append({"name": upload.filename, "reason": e.detail})
+                continue
+            ext = Path(fname).suffix.lower()
+            if ext not in _IMAGE_EXTS_UPLOAD:
+                skipped.append({"name": fname, "reason": f"extension {ext} not allowed"})
+                continue
+            dest = target / fname
+            try:
+                with dest.open("wb") as f:
+                    while True:
+                        chunk = await upload.read(1024 * 1024)  # 1 MB
+                        if not chunk:
+                            break
+                        f.write(chunk)
+                saved.append({"name": fname, "size": dest.stat().st_size})
+            except OSError as e:
+                skipped.append({"name": fname, "reason": str(e)})
+            finally:
+                await upload.close()
+        return JSONResponse({
+            "ok":      True,
+            "dir":     dir,
+            "saved":   saved,
+            "skipped": skipped,
+        })
+
+    @app.delete("/api/scans/file")
+    def api_scans_delete_file(dir: str, name: str) -> JSONResponse:
+        """Delete a single file from ONE or TWO."""
+        target = _resolve_scan_dir(dir)
+        fname = _safe_scan_name(name)
+        path = target / fname
+        try:
+            resolved = path.resolve(strict=True)
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail="file not found")
+        if target.resolve() not in resolved.parents:
+            raise HTTPException(status_code=400, detail="invalid path")
+        try:
+            resolved.unlink()
+        except OSError as e:
+            raise HTTPException(status_code=500, detail=str(e))
+        return JSONResponse({"ok": True, "deleted": fname})
+
+    @app.delete("/api/scans/clear")
+    def api_scans_clear(dir: str) -> JSONResponse:
+        """
+        Delete ALL image files in ONE, TWO, or both. dir='all' clears
+        both folders. Use after a successful 'List all' to tidy up.
+        """
+        targets = ["one", "two"] if dir == "all" else [dir]
+        for d in targets:
+            if d not in _SCAN_DIRS:
+                raise HTTPException(status_code=400,
+                                    detail=f"dir must be 'one', 'two', or 'all', got {dir!r}")
+        deleted = 0
+        for d in targets:
+            directory = _resolve_scan_dir(d)
+            for p in directory.iterdir():
+                if p.is_file() and p.suffix.lower() in _IMAGE_EXTS_UPLOAD:
+                    try:
+                        p.unlink()
+                        deleted += 1
+                    except OSError:
+                        pass
+        return JSONResponse({"ok": True, "dir": dir, "deleted": deleted})

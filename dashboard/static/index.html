@@ -96,6 +96,43 @@
         </div>
       </div>
 
+      <div id="scan-uploader" class="scan-uploader">
+        <div class="scan-uploader-row">
+          <div class="scan-drop" id="drop-one" data-dir="one">
+            <div class="scan-drop-label">ONE <span class="muted">(pictures)</span></div>
+            <div class="scan-drop-cta">
+              Drag scans here, or <label class="scan-drop-link">
+                <input type="file" id="picker-one" data-dir="one" multiple accept="image/jpeg,image/png,image/webp" hidden />browse
+              </label>
+            </div>
+            <div class="scan-drop-files" id="files-one">
+              <div class="muted scan-drop-empty">no files yet</div>
+            </div>
+            <div class="scan-drop-actions">
+              <button class="btn btn-ghost btn-tiny" id="clear-one" data-dir="one" disabled>Clear all</button>
+            </div>
+          </div>
+
+          <div class="scan-drop" id="drop-two" data-dir="two">
+            <div class="scan-drop-label">TWO <span class="muted">(cards)</span></div>
+            <div class="scan-drop-cta">
+              Drag scans here, or <label class="scan-drop-link">
+                <input type="file" id="picker-two" data-dir="two" multiple accept="image/jpeg,image/png,image/webp" hidden />browse
+              </label>
+            </div>
+            <div class="scan-drop-files" id="files-two">
+              <div class="muted scan-drop-empty">no files yet</div>
+            </div>
+            <div class="scan-drop-actions">
+              <button class="btn btn-ghost btn-tiny" id="clear-two" data-dir="two" disabled>Clear all</button>
+            </div>
+          </div>
+        </div>
+        <div class="scan-uploader-hint muted">
+          Files are stored on the server. Click <strong>Scan ONE / TWO</strong> above when ready. After listings go live you can clear the folders to keep things tidy.
+        </div>
+      </div>
+
       <div id="scan-status" class="scan-status muted">Not scanned yet.</div>
 
       <div class="workflow-grid">

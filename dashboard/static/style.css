@@ -1021,3 +1021,108 @@ body:not(.mockup-mode) .mockup-only-el { display: none !important; }
   border-radius: 6px;
   background: white;
 }
+
+/* ----- Scan uploader (drag-drop into ONE / TWO) -------------------- */
+
+.scan-uploader {
+  margin: 12px 0 8px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fbfbfd;
+}
+.scan-uploader-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+.scan-uploader-hint {
+  margin-top: 10px;
+  font-size: 12px;
+}
+.scan-drop {
+  border: 2px dashed #cdd3dc;
+  border-radius: 10px;
+  padding: 14px;
+  background: white;
+  transition: border-color 0.15s, background 0.15s;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 140px;
+}
+.scan-drop.dragover {
+  border-color: #4a8cff;
+  background: #f0f6ff;
+}
+.scan-drop-label {
+  font-weight: 600;
+  font-size: 14px;
+}
+.scan-drop-cta {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.scan-drop-link {
+  color: #4a8cff;
+  cursor: pointer;
+  text-decoration: underline;
+}
+.scan-drop-files {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 220px;
+  overflow-y: auto;
+  font-size: 12px;
+  padding: 4px 0;
+}
+.scan-drop-empty {
+  font-style: italic;
+  padding: 4px 0;
+}
+.scan-drop-file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 6px;
+  border-radius: 5px;
+}
+.scan-drop-file:hover {
+  background: #f4f5f7;
+}
+.scan-drop-file .name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+}
+.scan-drop-file .size {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.scan-drop-file .del {
+  border: none;
+  background: transparent;
+  color: #c04040;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+}
+.scan-drop-file .del:hover { color: #ff3030; }
+.scan-drop-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+.btn-tiny {
+  padding: 3px 8px;
+  font-size: 11px;
+}
+.scan-drop.uploading {
+  opacity: 0.7;
+  pointer-events: none;
+}

@@ -654,7 +654,15 @@ def register_workflow_routes(app: FastAPI) -> None:
             raise HTTPException(status_code=404, detail="mockup not found")
         if mockups_dir.resolve() not in resolved.parents:
             raise HTTPException(status_code=400, detail="invalid filename")
-        return FileResponse(resolved, media_type="image/jpeg")
+        # No browser caching — when Nicky re-renders a mockup (e.g. after
+        # fixing a font issue), the JPEG on disk gets overwritten under the
+        # same filename. Without no-cache the browser keeps showing the
+        # stale image even though the file has changed.
+        return FileResponse(
+            resolved,
+            media_type="image/jpeg",
+            headers={"Cache-Control": "no-store, must-revalidate"},
+        )
 
     @app.get("/api/scan-image/{filename}")
     def api_scan_image(filename: str) -> FileResponse:

@@ -103,12 +103,26 @@ def create_app() -> FastAPI:
 
     @app.get("/", include_in_schema=False)
     def index() -> HTMLResponse:
-        """Serve the SPA shell with cache-busting versioned asset URLs."""
+        """Serve the SPA shell with cache-busting versioned asset URLs.
+
+        Send no-cache on the HTML itself so browsers always fetch a
+        fresh copy that references the current ?v= asset URLs. Without
+        this the browser can keep serving an old index.html for hours,
+        which means clicks on UI built by the new JS go nowhere — the
+        old JS is still bound to old DOM that's no longer there.
+        """
         html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
         v = _static_version
         html = html.replace("/static/style.css", f"/static/style.css?v={v}")
         html = html.replace("/static/app.js",    f"/static/app.js?v={v}")
-        return HTMLResponse(html)
+        return HTMLResponse(
+            html,
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma":        "no-cache",
+                "Expires":       "0",
+            },
+        )
 
     @app.get("/api/health")
     def health() -> dict[str, str]:

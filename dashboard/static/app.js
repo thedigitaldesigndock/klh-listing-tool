@@ -233,32 +233,84 @@
     return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
   }
 
-  async function uploadScans(dir, fileList) {
-    const drop = document.getElementById(`drop-${dir}`);
-    if (drop) drop.classList.add("uploading");
-    const form = new FormData();
-    form.append("dir", dir);
-    for (const f of fileList) form.append("files", f, f.name);
-    try {
-      const res = await fetch("/api/scans/upload", { method: "POST", body: form });
-      if (!res.ok) {
-        const txt = await res.text();
-        alert(`Upload failed: HTTP ${res.status}\n${txt.slice(0, 300)}`);
-        return;
+  // Cloudflare's Free tier caps each request body at 100 MB. We send
+  // batches that stay well under that ceiling: chunk by total bytes
+  // first, then by file count as a safety net. Sequentially so the
+  // server doesn't see 7 parallel writes for a 50-scan drop.
+  const UPLOAD_MAX_BYTES_PER_BATCH = 70 * 1024 * 1024;   // 70 MB
+  const UPLOAD_MAX_FILES_PER_BATCH = 12;
+
+  function chunkFilesForUpload(files) {
+    const batches = [];
+    let current = [];
+    let currentBytes = 0;
+    for (const f of files) {
+      const size = f.size || 0;
+      const wouldOverflow =
+        (currentBytes + size > UPLOAD_MAX_BYTES_PER_BATCH && current.length > 0) ||
+        current.length >= UPLOAD_MAX_FILES_PER_BATCH;
+      if (wouldOverflow) {
+        batches.push(current);
+        current = [];
+        currentBytes = 0;
       }
-      const data = await res.json();
-      if (data.skipped && data.skipped.length) {
-        console.warn("Skipped some files:", data.skipped);
-        alert(`Skipped ${data.skipped.length} file(s):\n` +
-              data.skipped.map(s => `${s.name}: ${s.reason}`).join("\n"));
-      }
-      await refreshScansList();
-    } catch (err) {
-      console.error("upload failed:", err);
-      alert(`Upload error: ${err.message}`);
-    } finally {
-      if (drop) drop.classList.remove("uploading");
+      current.push(f);
+      currentBytes += size;
     }
+    if (current.length) batches.push(current);
+    return batches;
+  }
+
+  async function uploadScans(dir, fileList) {
+    const drop  = document.getElementById(`drop-${dir}`);
+    const ctaEl = drop?.querySelector(".scan-drop-cta");
+    const ctaOriginal = ctaEl ? ctaEl.innerHTML : "";
+    if (drop) drop.classList.add("uploading");
+
+    const filesArr = Array.from(fileList);
+    const batches  = chunkFilesForUpload(filesArr);
+
+    let totalSaved   = 0;
+    const allSkipped = [];
+    let failedBatch  = null;
+
+    for (let i = 0; i < batches.length; i++) {
+      const batch = batches[i];
+      if (ctaEl) {
+        ctaEl.textContent =
+          `Uploading batch ${i + 1}/${batches.length} (${batch.length} file${batch.length === 1 ? "" : "s"})…`;
+      }
+      const form = new FormData();
+      form.append("dir", dir);
+      for (const f of batch) form.append("files", f, f.name);
+      try {
+        const res = await fetch("/api/scans/upload", { method: "POST", body: form });
+        if (!res.ok) {
+          const txt = await res.text();
+          failedBatch = `Batch ${i + 1}/${batches.length} failed: HTTP ${res.status}\n${txt.slice(0, 400)}`;
+          break;
+        }
+        const data = await res.json();
+        totalSaved += (data.saved || []).length;
+        if (data.skipped && data.skipped.length) allSkipped.push(...data.skipped);
+      } catch (err) {
+        failedBatch = `Batch ${i + 1}/${batches.length} error: ${err.message}`;
+        break;
+      }
+    }
+
+    if (drop) drop.classList.remove("uploading");
+    if (ctaEl) ctaEl.innerHTML = ctaOriginal;
+
+    if (failedBatch) {
+      alert(`Upload partially complete.\nSaved ${totalSaved} file(s) before the failure.\n\n${failedBatch}`);
+    } else if (allSkipped.length) {
+      console.warn("Skipped some files:", allSkipped);
+      alert(`Uploaded ${totalSaved} file(s). Skipped ${allSkipped.length}:\n` +
+            allSkipped.slice(0, 8).map(s => `${s.name}: ${s.reason}`).join("\n") +
+            (allSkipped.length > 8 ? `\n…and ${allSkipped.length - 8} more` : ""));
+    }
+    await refreshScansList();
   }
 
   async function deleteScanFile(dir, name) {

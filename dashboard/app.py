@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from pipeline import presets as pp
@@ -43,6 +43,27 @@ from dashboard.workflow import register_workflow_routes
 STATIC_DIR    = Path(__file__).resolve().parent / "static"
 REPO_ROOT     = Path(__file__).resolve().parent.parent
 TEMPLATES_DIR = REPO_ROOT / "templates"
+
+
+def _compute_static_version() -> str:
+    """
+    Return a short token used to cache-bust /static/style.css and
+    /static/app.js. Prefer the current git short-sha (auto-changes on
+    every deploy). Fall back to a server-start timestamp if git is
+    unavailable so even a non-git checkout still busts old caches at
+    each restart.
+    """
+    import subprocess, time
+    try:
+        out = subprocess.check_output(
+            ["git", "-C", str(REPO_ROOT), "rev-parse", "--short", "HEAD"],
+            stderr=subprocess.DEVNULL, timeout=2,
+        ).decode().strip()
+        if out:
+            return out
+    except Exception:
+        pass
+    return str(int(time.time()))
 
 # Only these filenames can be fetched via /api/template-preview/<id>.
 # We deliberately restrict to the preview JPEG so the route can't be
@@ -75,10 +96,19 @@ def create_app() -> FastAPI:
 
     # --- Routes -------------------------------------------------------- #
 
+    # Cache-bust static assets by appending the current git short-sha
+    # to the <link>/<script> URLs in index.html. Computed once at app
+    # construction (cheap) and reused for every response.
+    _static_version = _compute_static_version()
+
     @app.get("/", include_in_schema=False)
-    def index() -> FileResponse:
-        """Serve the SPA shell."""
-        return FileResponse(STATIC_DIR / "index.html")
+    def index() -> HTMLResponse:
+        """Serve the SPA shell with cache-busting versioned asset URLs."""
+        html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+        v = _static_version
+        html = html.replace("/static/style.css", f"/static/style.css?v={v}")
+        html = html.replace("/static/app.js",    f"/static/app.js?v={v}")
+        return HTMLResponse(html)
 
     @app.get("/api/health")
     def health() -> dict[str, str]:

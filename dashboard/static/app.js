@@ -153,19 +153,10 @@
         });
       }
 
-      // Clicking anywhere in the drop area opens the file picker —
-      // EXCEPT clicks on the file list, delete buttons, or the
-      // Clear-all button.
-      drop.addEventListener("click", (e) => {
-        if (e.target.closest(".scan-drop-file") ||
-            e.target.closest(".scan-drop-actions") ||
-            e.target.closest(".scan-drop-link") ||
-            e.target.tagName === "BUTTON" ||
-            e.target.tagName === "INPUT") {
-          return;
-        }
-        if (picker) picker.click();
-      });
+      // Note: the file <input> is positioned absolutely across the
+      // whole drop area (see CSS). Clicks anywhere on the empty zone
+      // hit the input natively → the browser opens the file dialog.
+      // No JS click forwarding needed.
 
       // Drag-and-drop.
       ["dragenter", "dragover"].forEach((ev) => {

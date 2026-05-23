@@ -5,13 +5,18 @@ Send tier-aware SOTIB (Send Offer To Interested Buyers) offers.
 For every eligible listing eBay returns (has watchers / recently viewed),
 compute a price-band-based discount and fire sendOfferToInterestedBuyers.
 
-Tier → discount mapping (mirrors the PLS ad-tier price bands):
+Tier → discount mapping. Bands roughly mirror the PLS ad-tier bands
+above £10. Sub-£10 SOTIB is a token 5% — marginal cost is zero (it's
+an offer email, not a CPC ad) so we might as well give every engaged
+buyer a small nudge:
 
-    < £10                    SKIP (margin too thin)
-    £10-£14.99   (BUDGET)     18%
-    £15-£29.99   (STANDARD)   15%
-    £30-£49.99   (PREMIUM)    12%
-    £50+         (PREMIUM+)   10%
+    £0-£9.99     (MICRO)        5%
+    £10-£14.99   (BUDGET)      18%
+    £15-£29.99   (STANDARD)    15%
+    £30-£49.99   (PREMIUM)     12%
+    £50+         (PREMIUM+)    10%
+
+Mugs are special-cased: capped at 5% regardless of tier (tight margins).
 
 Offer duration: 2 days (eBay auto-extends under the hood).
 quantity: 1 (matches the new unique-item inventory model).
@@ -36,9 +41,13 @@ from pipeline import audit_db
 from ebay_api import negotiation
 
 
-# Keep in sync with dashboard/ads_panel.TIER_DEFS + scripts/daily_ad_housekeeping.
+# SOTIB-only tier table. The above-£10 bands are kept in sync with
+# dashboard/ads_panel.TIER_DEFS + scripts/daily_ad_housekeeping, but
+# MICRO is SOTIB-only — sub-£10 stock isn't worth running PLA ads on
+# (CPC eats the margin) but a 5% offer email is free to send.
 TIER_OFFER_PCT: list[tuple[float, float, int, str]] = [
     # (price_lo, price_hi, discount_pct, tier_name)
+    (0.0,     10.0,   5, "MICRO"),
     (10.0,    15.0,  18, "BUDGET"),
     (15.0,    30.0,  15, "STANDARD"),
     (30.0,    50.0,  12, "PREMIUM"),
@@ -47,7 +56,7 @@ TIER_OFFER_PCT: list[tuple[float, float, int, str]] = [
 
 
 def _tier_for_price(p):
-    if p is None or p < 10:
+    if p is None:
         return None
     for lo, hi, pct, name in TIER_OFFER_PCT:
         if lo <= p < hi:
@@ -225,7 +234,6 @@ def _build_plan() -> list[dict]:
             print(f"  WARN: couldn't parse sotib_exclusions.yaml: {str(e)[:80]}")
 
     plan: list[dict] = []
-    skipped_under_10 = 0
     skipped_no_price = 0
     skipped_excluded = 0
     skipped_markdown = 0
@@ -241,9 +249,6 @@ def _build_plan() -> list[dict]:
         price = prices.get(lid)
         if price is None:
             skipped_no_price += 1
-            continue
-        if price < 10:
-            skipped_under_10 += 1
             continue
         title_lc = (titles.get(lid) or "").lower()
         # Excluded signer (sale-event running) — no offer at all.
@@ -272,7 +277,6 @@ def _build_plan() -> list[dict]:
             "discountPercentage": str(pct),
             "title":              titles.get(lid, ""),
         })
-    print(f"  under £10 (skipped): {skipped_under_10}")
     print(f"  no price in cache:   {skipped_no_price}")
     print(f"  excluded signers:    {skipped_excluded}")
     print(f"  on markdown sale:    {skipped_markdown}")

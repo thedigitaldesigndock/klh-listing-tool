@@ -61,6 +61,18 @@ from typing import Optional, Union
 _PRICE_RE = re.compile(r"^\d+\.\d{2}$")
 # Variant is a pure-integer segment: "1", "02", "10".
 _VARIANT_RE = re.compile(r"^\d+$")
+# macOS / Windows auto-rename on filename collision: "Foo.jpg" already
+# exists, so the OS saves the new file as "Foo (1).jpg". The number
+# winds up jammed onto the END of the stem with no underscore, which
+# poisoned the last segment (usually the genre token) before this was
+# handled — see 2026-06-03 Jeremy Clarkson incident where two scans
+# became "..._TV (1)" / "..._TV (2)" and the parser saw the category
+# as "TV (1)" / "TV (2)" → unrecognised genre token → no title built.
+#
+# We strip this trailing " (N)" / "(N)" from the stem BEFORE splitting
+# on underscores and treat the N as the variant. Kim doesn't have to
+# learn the underscore-N convention — duplicate names just work.
+_OS_COLLISION_RE = re.compile(r"\s*\((\d+)\)\s*$")
 
 
 @dataclass
@@ -154,6 +166,17 @@ def parse_stem(stem: str) -> ParsedFilename:
     if not stem:
         return ParsedFilename(name="")
 
+    # 0. macOS / Windows auto-rename collision suffix: strip a trailing
+    #    " (N)" / "(N)" from the raw stem (BEFORE underscore-splitting)
+    #    so it can't poison the last segment. We remember the N as a
+    #    fallback variant that'll be applied at the end if the stem
+    #    doesn't already supply one via the proper _N convention.
+    collision_variant: Optional[str] = None
+    m = _OS_COLLISION_RE.search(stem)
+    if m:
+        collision_variant = m.group(1)
+        stem = _OS_COLLISION_RE.sub("", stem).rstrip()
+
     parts = [p.strip() for p in stem.split("_")]
 
     # 1. Trailing price?
@@ -185,6 +208,12 @@ def parse_stem(stem: str) -> ParsedFilename:
     else:
         field1 = _nonempty(parts[1]) if len(parts) > 1 else None
         category = _nonempty(parts[2]) if len(parts) > 2 else None
+
+    # If the stem already supplies a proper _N variant, that wins. Only
+    # fall back to the OS-collision-derived variant when nothing else
+    # disambiguated.
+    if variant is None and collision_variant is not None:
+        variant = collision_variant
 
     return ParsedFilename(
         name=name.strip(),

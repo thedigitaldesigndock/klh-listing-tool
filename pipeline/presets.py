@@ -756,7 +756,8 @@ def build_listing(
                 "Add one of "
                 "_TV / _Film / _Music / _Football / _Rugby / _Cricket / "
                 "_F1 / _Boxing / _Golf / _Tennis / _Snooker / _Darts / "
-                "_NFL / _NBA / _MMA / _Comedy / _Drama / _Rock / _Pop / _Indie "
+                "_NFL / _NBA / _MMA / _Olympics / "
+                "_Comedy / _Drama / _Rock / _Pop / _Indie "
                 "to the end of the filename "
                 "(e.g. 'Richard O'Brien_Rocky Horror Picture Show_Film.jpg')."
             )

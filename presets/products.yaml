@@ -440,6 +440,7 @@ categories_by_subject:
   nba:                35027   # Basketball Autographs (2/5 live listings)
   nfl:                69530   # American Football Autographs (1 sample — verify)
   mma:                2902    # MMA/UFC Autographs (3/5 live listings)
+  olympics:           106585  # Sports Memorabilia > Olympic Memorabilia > Other (51/79 live Olympic listings)
   music_pop:          178898  # Music > Music Memorabilia > Pop > Autographs
   music_rock:         2525    # Music > Music Memorabilia > Rock > Autographs (verify)
   film_tv:            2312    # Entertainment Memorabilia > Autographs (verify)

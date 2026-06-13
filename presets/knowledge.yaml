@@ -128,6 +128,13 @@ categories:
     subject: mma
     store_category_id: 3644936013   # Wrestling/UFC Autographs
 
+  Olympics:
+    in_title: true         # strong search keyword for Olympic memorabilia
+    is_keywords: "Olympics Olympic Games Gold Silver Bronze Medal Champion"
+    field1_label: Discipline   # field1 = sport / event (Ice Skating, Rowing, Athletics, Swimming…)
+    subject: olympics
+    store_category_id: 1   # no dedicated Olympics bucket yet → "Other" (mirrors NFL)
+
   # ── Music ──
   Music:
     in_title: false        # too generic for title

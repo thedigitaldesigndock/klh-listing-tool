@@ -133,7 +133,7 @@ categories:
     is_keywords: "Olympics Olympic Games Gold Silver Bronze Medal Champion"
     field1_label: Discipline   # field1 = sport / event (Ice Skating, Rowing, Athletics, Swimming…)
     subject: olympics
-    store_category_id: 1   # no dedicated Olympics bucket yet → "Other" (mirrors NFL)
+    store_category_id: 1958697013   # Olympic Autographs
 
   # ── Music ──
   Music:

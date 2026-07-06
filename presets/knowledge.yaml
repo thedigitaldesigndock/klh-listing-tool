@@ -135,6 +135,98 @@ categories:
     subject: olympics
     store_category_id: 1958697013   # Olympic Autographs
 
+  Cycling:
+    in_title: true
+    is_keywords: "Cycling Bike Tour de France Peloton Yellow Jersey"
+    field1_label: Team
+    subject: cycling
+    store_category_id: 2630183013   # Cycling Autographs
+
+  Horse Racing:
+    in_title: true
+    is_keywords: "Horse Racing Jockey Grand National Cheltenham Aintree Ascot"
+    field1_label: Discipline   # Flat / Jumps / Trainer
+    subject: horse_racing
+    store_category_id: 2090705013   # Horse Racing Autographs
+
+  Ice Skating:
+    in_title: true
+    is_keywords: "Ice Skating Figure Skating Ice Dance Olympic Champion"
+    field1_label: Discipline   # Figure Skating / Ice Dance / Speed Skating
+    subject: ice_skating
+    store_category_id: 1958697013   # Olympic Autographs (Kim files skaters there)
+
+  Ice Hockey:
+    in_title: true
+    is_keywords: "Ice Hockey NHL Puck Stanley Cup Champion"
+    field1_label: Team
+    subject: ice_hockey
+    store_category_id: 1                # no dedicated bucket yet → "Other"
+
+  NHL:
+    in_title: true
+    is_keywords: "NHL Ice Hockey Stanley Cup Eastern Western Conference"
+    field1_label: Team
+    subject: ice_hockey                 # alias — same eBay bucket as Ice Hockey
+    store_category_id: 1
+
+  NASCAR:
+    in_title: true
+    is_keywords: "NASCAR Racing Cup Series Daytona Stock Car"
+    field1_label: Team
+    subject: nascar
+    store_category_id: 1997227013   # Motorsport Autographs
+
+  Motorsport:
+    in_title: true
+    is_keywords: "Motorsport MotoGP Rally Superbike Le Mans Racing Driver"
+    field1_label: Team
+    subject: motorsport
+    store_category_id: 1997227013   # Motorsport Autographs
+
+  Basketball:
+    in_title: true
+    is_keywords: "Basketball NBA College Slam Dunk Champion"
+    field1_label: Team
+    subject: basketball
+    store_category_id: 11892229013  # Basketball Autographs (shared with NBA)
+
+  Baseball:
+    in_title: true
+    is_keywords: "Baseball MLB World Series Home Run Champion"
+    field1_label: Team
+    subject: baseball
+    store_category_id: 1                # no dedicated bucket yet → "Other"
+
+  # ── Personalities (non-sport, non-music, non-screen) ──
+  Aviation:
+    in_title: false        # role (Astronaut/Pilot/Aviator) already implies it
+    is_keywords: "Aviation Pilot Astronaut NASA RAF Flight"
+    field1_label: Role     # Astronaut / Pilot / Aviator / Squadron
+    subject: aviation
+    store_category_id: 5458895013   # Aviation Autographs
+
+  Artist:
+    in_title: false
+    is_keywords: "Artist Painter Sculptor Contemporary Art Gallery"
+    field1_label: Medium   # Painter / Sculptor / Photographer / Illustrator
+    subject: artist
+    store_category_id: 11892227013  # Artists Autographs
+
+  Model:
+    in_title: false
+    is_keywords: "Model Fashion Supermodel Runway Cover Vogue"
+    field1_label: Agency
+    subject: model
+    store_category_id: 11892170013  # Models Autographs
+
+  Radio:
+    in_title: false
+    is_keywords: "Radio Presenter DJ Broadcast BBC Show"
+    field1_label: Station
+    subject: radio
+    store_category_id: 1958696013   # Radio Autographs
+
   # ── Music ──
   Music:
     in_title: false        # too generic for title

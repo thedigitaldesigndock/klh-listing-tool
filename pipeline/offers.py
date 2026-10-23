@@ -10,17 +10,17 @@ Table source: Kim's handwritten sheets (photographed 2026-10-23)
 ----------------------------------------------------------------
 Her sheet rows are fixed anchors (KIM_SHEET below). Prices between two
 anchors get an auto-accept interpolated linearly between them, rounded
-to the nearest whole pound, with `min_offer = auto_accept - £0.01` (so
-Kim never sees a best offer she could have auto-accepted). From £199.99
-up her rule is "decline below £169.99, never auto-accept": those rows
-carry a min_offer and no auto_accept, so every offer above the floor
-comes to Kim to decide.
+to the nearest whole pound, with `min_offer = auto_accept - £0.01`, so
+every offer is either auto-accepted or auto-declined and none ever lands
+with Kim to decide (Pete, 23 Oct 2026). From £199.99 up the auto-accept
+is 15% off (£199.99 -> £170, matching her £169.99 floor; £299.99 -> £255).
 
 This replaced the April 2026 formula (linear 25% off at £15.99 → 15% off
 at £999.99), which was ~24% off at every price and did not match Kim's
 sheets (e.g. £79.99 auto-accepted £61 where Kim uses £70).
 
-Listings below £14.99 are fixed-price only — no Best Offer at all.
+Listings at £14.99 and below are fixed-price only — no Best Offer at all
+(her sheet's £14.99 row is kept only as an interpolation anchor).
 
 Every `.99` price point from £14.99 to £999.99 has an explicit row
 in `presets/offers.yaml`. The YAML file is generated from the formula
@@ -73,9 +73,12 @@ KIM_SHEET: dict[Decimal, Decimal] = {Decimal(p): Decimal(a) for p, a in [
     ("189.99", "160"),
 ]}
 
-# From this price up: decline below MIN_ONLY_FLOOR, no auto-accept (Kim decides).
-MIN_ONLY_FROM  = Decimal("199.99")
-MIN_ONLY_FLOOR = Decimal("169.99")
+# At or below this price: fixed price, no Best Offer (Pete, 23 Oct 2026).
+NO_OFFER_AT_OR_BELOW = Decimal("14.99")
+
+# From this price up, auto-accept at a flat discount (her £199.99 row: £170).
+TOP_BAND_FROM     = Decimal("199.99")
+TOP_BAND_DISCOUNT = Decimal("0.15")
 
 # Table spans every .99 price in £1 steps.
 TABLE_START = Decimal("14.99")
@@ -109,8 +112,10 @@ def _accept_for(price: Decimal) -> Decimal:
     """Auto-accept for `price`: Kim's figure on her rows, linear between them."""
     if price in KIM_SHEET:
         return KIM_SHEET[price]
-    # The £199.99 floor (169.99 + 0.01) closes the last interpolation span.
-    anchors = sorted({**KIM_SHEET, MIN_ONLY_FROM: MIN_ONLY_FLOOR + Decimal("0.01")}.items())
+    if price >= TOP_BAND_FROM:
+        return (price * (Decimal("1") - TOP_BAND_DISCOUNT)).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+    # The £199.99 top-band value closes the last interpolation span.
+    anchors = sorted({**KIM_SHEET, TOP_BAND_FROM: _accept_for(TOP_BAND_FROM)}.items())
     lo = max((p, a) for p, a in anchors if p < price)
     hi = min((p, a) for p, a in anchors if p > price)
     raw = lo[1] + (hi[1] - lo[1]) * (price - lo[0]) / (hi[0] - lo[0])
@@ -118,11 +123,9 @@ def _accept_for(price: Decimal) -> Decimal:
 
 
 def _row_for(price: Decimal) -> Optional[OfferRow]:
-    """One table row. None below the first sheet price (no Best Offer)."""
-    if price < min(KIM_SHEET):
+    """One table row. None at or below NO_OFFER_AT_OR_BELOW (no Best Offer)."""
+    if price <= NO_OFFER_AT_OR_BELOW:
         return None
-    if price >= MIN_ONLY_FROM:
-        return OfferRow(list_price=float(price), min_offer=float(MIN_ONLY_FLOOR), auto_accept=None)
     accept = _accept_for(price)
     return OfferRow(
         list_price=float(price),
@@ -153,8 +156,9 @@ _HEADER = """\
 #
 # Source: Kim's handwritten Best Offer sheets (KIM_SHEET in
 # pipeline/offers.py). Her rows are exact; prices between them are
-# interpolated, rounded to whole £, min_offer = auto_accept - £0.01.
-# £199.99 and up: decline below £169.99, never auto-accept.
+# interpolated, rounded to whole £, min_offer = auto_accept - £0.01, so
+# every offer is auto-accepted or auto-declined. £199.99 and up: 15% off.
+# £14.99 and below: fixed price, no Best Offer.
 #
 # Schema:
 #   offer_table:

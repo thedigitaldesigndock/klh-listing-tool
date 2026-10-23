@@ -6,12 +6,19 @@ declines anything below a price-dependent minimum and auto-accepts
 anything at or above a price-dependent acceptance threshold. This
 module holds the lookup table and the formula that generates it.
 
-Curve (agreed with Peter on 2026-04-10)
----------------------------------------
-Linear discount scaling from 25% off at £15.99 down to 15% off at
-£999.99, rounded to the nearest whole pound, with `min_offer`
-defined as `auto_accept - £0.01` (so Kim never sees a best offer she
-could have auto-accepted).
+Table source: Kim's handwritten sheets (photographed 2026-10-23)
+----------------------------------------------------------------
+Her sheet rows are fixed anchors (KIM_SHEET below). Prices between two
+anchors get an auto-accept interpolated linearly between them, rounded
+to the nearest whole pound, with `min_offer = auto_accept - £0.01` (so
+Kim never sees a best offer she could have auto-accepted). From £199.99
+up her rule is "decline below £169.99, never auto-accept": those rows
+carry a min_offer and no auto_accept, so every offer above the floor
+comes to Kim to decide.
+
+This replaced the April 2026 formula (linear 25% off at £15.99 → 15% off
+at £999.99), which was ~24% off at every price and did not match Kim's
+sheets (e.g. £79.99 auto-accepted £61 where Kim uses £70).
 
 Listings below £14.99 are fixed-price only — no Best Offer at all.
 
@@ -54,14 +61,21 @@ import yaml
 # Config constants — tweak here to shift the curve
 # --------------------------------------------------------------------------- #
 
-# Below this price, no Best Offer — fixed price only.
-NO_OFFER_THRESHOLD = Decimal("14.99")
+# Kim's sheet: list price -> auto-accept (min_offer is always accept - £0.01).
+KIM_SHEET: dict[Decimal, Decimal] = {Decimal(p): Decimal(a) for p, a in [
+    ("14.99", "10"),  ("16.99", "12"),  ("17.99", "13"),  ("19.99", "15"),
+    ("22.99", "16"),  ("24.99", "19"),  ("27.99", "20"),  ("29.99", "22"),
+    ("34.99", "25"),  ("39.99", "30"),  ("49.99", "40"),  ("54.99", "45"),
+    ("59.99", "50"),  ("64.99", "55"),  ("69.99", "60"),  ("74.99", "65"),
+    ("79.99", "70"),  ("84.99", "75"),  ("89.99", "75"),  ("99.99", "85"),
+    ("109.99", "90"), ("119.99", "100"), ("124.99", "100"), ("129.99", "110"),
+    ("139.99", "115"), ("149.99", "120"), ("169.99", "140"), ("179.99", "150"),
+    ("189.99", "160"),
+]}
 
-# Curve endpoints.
-CURVE_START_PRICE = Decimal("15.99")   # first price that has BO enabled
-CURVE_END_PRICE   = Decimal("999.99")
-CURVE_START_DISCOUNT = Decimal("0.25")  # 25% off at £15.99
-CURVE_END_DISCOUNT   = Decimal("0.15")  # 15% off at £999.99
+# From this price up: decline below MIN_ONLY_FLOOR, no auto-accept (Kim decides).
+MIN_ONLY_FROM  = Decimal("199.99")
+MIN_ONLY_FLOOR = Decimal("169.99")
 
 # Table spans every .99 price in £1 steps.
 TABLE_START = Decimal("14.99")
@@ -80,43 +94,39 @@ OFFERS_YAML = Path(__file__).resolve().parent.parent / "presets" / "offers.yaml"
 class OfferRow:
     """One row of the auto-decision table."""
     list_price: float
-    min_offer: float         # auto-decline below this
-    auto_accept: float       # auto-accept at or above this
+    min_offer: float                   # auto-decline below this
+    auto_accept: Optional[float]       # auto-accept at or above this; None = never auto-accept
 
-    def as_tuple(self) -> tuple[float, float, float]:
+    def as_tuple(self) -> tuple[float, float, Optional[float]]:
         return (self.list_price, self.min_offer, self.auto_accept)
 
 
 # --------------------------------------------------------------------------- #
-# Curve — formula
+# Kim's sheet -> full table
 # --------------------------------------------------------------------------- #
 
-def _discount_for(price: Decimal) -> Decimal:
-    """
-    Linear discount from CURVE_START_DISCOUNT at CURVE_START_PRICE to
-    CURVE_END_DISCOUNT at CURVE_END_PRICE. Clamped at the endpoints.
-    """
-    if price <= CURVE_START_PRICE:
-        return CURVE_START_DISCOUNT
-    if price >= CURVE_END_PRICE:
-        return CURVE_END_DISCOUNT
-    span = CURVE_END_PRICE - CURVE_START_PRICE
-    progress = (price - CURVE_START_PRICE) / span
-    return CURVE_START_DISCOUNT - progress * (CURVE_START_DISCOUNT - CURVE_END_DISCOUNT)
+def _accept_for(price: Decimal) -> Decimal:
+    """Auto-accept for `price`: Kim's figure on her rows, linear between them."""
+    if price in KIM_SHEET:
+        return KIM_SHEET[price]
+    # The £199.99 floor (169.99 + 0.01) closes the last interpolation span.
+    anchors = sorted({**KIM_SHEET, MIN_ONLY_FROM: MIN_ONLY_FLOOR + Decimal("0.01")}.items())
+    lo = max((p, a) for p, a in anchors if p < price)
+    hi = min((p, a) for p, a in anchors if p > price)
+    raw = lo[1] + (hi[1] - lo[1]) * (price - lo[0]) / (hi[0] - lo[0])
+    return raw.quantize(Decimal("1"), rounding=ROUND_HALF_UP)
 
 
 def _row_for(price: Decimal) -> Optional[OfferRow]:
-    """Compute a single row via the formula. Returns None below the BO threshold."""
-    if price < CURVE_START_PRICE:
+    """One table row. None below the first sheet price (no Best Offer)."""
+    if price < min(KIM_SHEET):
         return None
-    d = _discount_for(price)
-    raw_accept = price * (Decimal("1") - d)
-    # Round to the nearest whole £
-    accept = raw_accept.quantize(Decimal("1"), rounding=ROUND_HALF_UP)
-    min_offer = accept - Decimal("0.01")
+    if price >= MIN_ONLY_FROM:
+        return OfferRow(list_price=float(price), min_offer=float(MIN_ONLY_FLOOR), auto_accept=None)
+    accept = _accept_for(price)
     return OfferRow(
         list_price=float(price),
-        min_offer=float(min_offer),
+        min_offer=float(accept - Decimal("0.01")),
         auto_accept=float(accept),
     )
 
@@ -126,10 +136,7 @@ def generate_table() -> list[Optional[OfferRow]]:
     rows: list[Optional[OfferRow]] = []
     p = TABLE_START
     while p <= TABLE_END:
-        if p < CURVE_START_PRICE:
-            rows.append(None)  # no-BO row — list_price only
-        else:
-            rows.append(_row_for(p))
+        rows.append(_row_for(p))
         p += TABLE_STEP
     return rows
 
@@ -144,14 +151,15 @@ _HEADER = """\
 # GENERATED FILE — do NOT hand-edit. Regenerate via:
 #   python -m pipeline.offers --regenerate
 #
-# Curve: linear 25% off at £15.99 → 15% off at £999.99, rounded to
-# whole £, with min_offer = auto_accept - £0.01. Listings at £14.99 or
-# below are fixed-price only (no Best Offer). See pipeline/offers.py
-# for the formula and constants.
+# Source: Kim's handwritten Best Offer sheets (KIM_SHEET in
+# pipeline/offers.py). Her rows are exact; prices between them are
+# interpolated, rounded to whole £, min_offer = auto_accept - £0.01.
+# £199.99 and up: decline below £169.99, never auto-accept.
 #
 # Schema:
 #   offer_table:
 #     - [list_price, min_offer, auto_accept]      # Best Offer enabled
+#     - [list_price, min_offer, null]             # decline-only, Kim decides the rest
 #     - [list_price, null,      null]             # Fixed price only
 #
 """
@@ -165,6 +173,8 @@ def write_offers_yaml(path: Path = OFFERS_YAML) -> Path:
     for row in rows:
         if row is None:
             lines.append(f"  - [{float(p):.2f}, null, null]\n")
+        elif row.auto_accept is None:
+            lines.append(f"  - [{row.list_price:.2f}, {row.min_offer:.2f}, null]\n")
         else:
             lines.append(
                 f"  - [{row.list_price:.2f}, {row.min_offer:.2f}, "
@@ -196,13 +206,13 @@ def load_offer_table(path: Path = OFFERS_YAML) -> dict[float, Optional[OfferRow]
             raise ValueError(f"Bad row in {path}: {entry!r}")
         list_price, min_o, accept = entry
         list_price = float(list_price)
-        if min_o is None or accept is None:
+        if min_o is None:
             out[round(list_price, 2)] = None
         else:
             out[round(list_price, 2)] = OfferRow(
                 list_price=list_price,
                 min_offer=float(min_o),
-                auto_accept=float(accept),
+                auto_accept=float(accept) if accept is not None else None,
             )
     return out
 
@@ -279,10 +289,10 @@ def build_best_offer_xml(row: Optional[OfferRow], currency: str = "GBP") -> str:
         "<BestOfferEnabled>true</BestOfferEnabled>"
         "</BestOfferDetails>"
         "<ListingDetails>"
-        f'<BestOfferAutoAcceptPrice currencyID="{currency}">'
-        f"{row.auto_accept:.2f}"
-        f"</BestOfferAutoAcceptPrice>"
-        f'<MinimumBestOfferPrice currencyID="{currency}">'
+        + (f'<BestOfferAutoAcceptPrice currencyID="{currency}">'
+           f"{row.auto_accept:.2f}</BestOfferAutoAcceptPrice>"
+           if row.auto_accept is not None else "")
+        + f'<MinimumBestOfferPrice currencyID="{currency}">'
         f"{row.min_offer:.2f}"
         f"</MinimumBestOfferPrice>"
         "</ListingDetails>"
@@ -300,6 +310,8 @@ def _print_table() -> None:
     for price, row in sorted(table.items()):
         if row is None:
             print(f"  £{price:6.2f}  {'—':>8}  {'—':>8}  {'fixed':>10}")
+        elif row.auto_accept is None:
+            print(f"  £{row.list_price:6.2f}  £{row.min_offer:6.2f}  {'Kim':>8}  {'decides':>10}")
         else:
             disc = (row.list_price - row.auto_accept) / row.list_price * 100
             print(

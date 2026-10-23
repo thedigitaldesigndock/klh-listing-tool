@@ -141,7 +141,8 @@ def _best_offer_xml(bo: Optional[dict], currency: str) -> str:
     if not bo:
         return ""
     try:
-        accept = float(bo["auto_accept"])
+        accept = bo.get("auto_accept")
+        accept = float(accept) if accept is not None else None   # None = never auto-accept
         min_offer = float(bo["min_offer"])
     except (KeyError, TypeError, ValueError) as e:
         raise ListerError(
@@ -152,10 +153,9 @@ def _best_offer_xml(bo: Optional[dict], currency: str) -> str:
         "<BestOfferEnabled>true</BestOfferEnabled>"
         "</BestOfferDetails>"
         "<ListingDetails>"
-        f'<BestOfferAutoAcceptPrice currencyID="{currency}">'
-        f"{accept:.2f}"
-        f"</BestOfferAutoAcceptPrice>"
-        f'<MinimumBestOfferPrice currencyID="{currency}">'
+        + (f'<BestOfferAutoAcceptPrice currencyID="{currency}">'
+           f"{accept:.2f}</BestOfferAutoAcceptPrice>" if accept is not None else "")
+        + f'<MinimumBestOfferPrice currencyID="{currency}">'
         f"{min_offer:.2f}"
         f"</MinimumBestOfferPrice>"
         "</ListingDetails>"

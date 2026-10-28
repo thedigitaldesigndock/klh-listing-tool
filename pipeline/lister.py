@@ -723,8 +723,11 @@ def set_item_quantity(item_id: str, quantity: int) -> dict[str, Any]:
 
 
 # --------------------------------------------------------------------------- #
-# Picture upload (UploadSiteHostedPictures)
+# Picture upload (Media API createImageFromFile)
 # --------------------------------------------------------------------------- #
+
+MEDIA_UPLOAD_URL = "https://apim.ebay.com/commerce/media/v1_beta/image/create_image_from_file"
+
 
 def upload_site_hosted_picture(
     path: Path,
@@ -732,105 +735,64 @@ def upload_site_hosted_picture(
     picture_set: str = "Supersize",
 ) -> str:
     """
-    Upload a local JPEG to eBay's Picture Services and return the
-    hosted URL (`FullURL`).
+    Upload a local image to eBay Picture Services and return the hosted
+    URL to put in a listing's <PictureURL>.
 
-    `picture_set`: Standard | Supersize | Large. Supersize is what
-    Kim's current listings use and gives the best zoom.
+    Uses the Media API (createImageFromFile). eBay switched off the Trading
+    API's UploadSiteHostedPictures: from 28 Oct 2026 every request to it
+    returned HTTP 404 "Resource not found" (file or URL uploads alike)
+    while all other Trading calls kept working, which broke /api/list and
+    the daily extras attach. The Media API accepts the same OAuth user
+    token, takes the file as multipart field `image`, and returns the
+    eBay-hosted `imageUrl`. Images not used in a listing expire after
+    30 days.
 
-    Implementation notes:
-      * UploadSiteHostedPictures is the only Trading verb that expects
-        multipart/form-data rather than a text/xml envelope. The body
-        has two parts: the XML request (with a placeholder PictureData
-        element), and the binary image bytes. Inline base64 is allowed
-        by the API but eBay's picture service rejects it as "corrupt"
-        in practice — multipart is the documented correct transport.
-      * Files over ~12MB should be resized before calling this —
-        bigger than that and eBay throttles.
+    `picture_set` is accepted for backwards compatibility and ignored:
+    the Media API builds every size eBay needs from the upload.
     """
+    import json
     import urllib.error
     import urllib.request
-    from ebay_api.trading import TRADING_ENDPOINT, TRADING_VERSION, _site_id_for
-    from ebay_api.token_manager import _load_env, get_access_token
+    import uuid
+    from ebay_api.token_manager import get_access_token
 
     path = Path(path)
     if not path.exists():
         raise ListerError(f"picture not found: {path}")
 
-    # XML request part — element order matters (eBay's schema is strict).
-    # The binary bytes are sent as the second MIME part; no PictureData
-    # element here for multipart uploads.
-    xml_body = (
-        f'<?xml version="1.0" encoding="utf-8"?>'
-        f'<UploadSiteHostedPicturesRequest xmlns="{NS}">'
-        f"{_el('PictureSet', picture_set)}"
-        f"<PictureUploadPolicy>Add</PictureUploadPolicy>"
-        f'</UploadSiteHostedPicturesRequest>'
-    ).encode("utf-8")
-
-    image_bytes = path.read_bytes()
-
-    boundary = "MIME_boundary_klh_upload_pictures"
+    boundary = "klhmedia" + uuid.uuid4().hex
     crlf = b"\r\n"
     body = b"".join([
         b"--", boundary.encode(), crlf,
-        b'Content-Disposition: form-data; name="XML Payload"', crlf,
-        b"Content-Type: text/xml; charset=utf-8", crlf,
-        crlf,
-        xml_body, crlf,
-        b"--", boundary.encode(), crlf,
         b'Content-Disposition: form-data; name="image"; filename="',
-        path.name.encode(), b'"', crlf,
+        path.name.encode("utf-8", "replace").replace(b'"', b"'"), b'"', crlf,
         f"Content-Type: {_guess_mime(path)}".encode(), crlf,
-        b"Content-Transfer-Encoding: binary", crlf,
         crlf,
-        image_bytes, crlf,
+        path.read_bytes(), crlf,
         b"--", boundary.encode(), b"--", crlf,
     ])
 
-    env = _load_env()
-    token = get_access_token()
-    req = urllib.request.Request(TRADING_ENDPOINT, data=body)
-    req.add_header("X-EBAY-API-COMPATIBILITY-LEVEL", TRADING_VERSION)
-    req.add_header("X-EBAY-API-CALL-NAME", "UploadSiteHostedPictures")
-    req.add_header("X-EBAY-API-SITEID", _site_id_for(env))
-    req.add_header("X-EBAY-API-IAF-TOKEN", token)
-    # Unquoted boundary — eBay's multipart parser trips on quoted forms.
-    req.add_header(
-        "Content-Type",
-        f"multipart/form-data; boundary={boundary}",
-    )
+    req = urllib.request.Request(MEDIA_UPLOAD_URL, data=body, method="POST")
+    req.add_header("Authorization", f"Bearer {get_access_token()}")
+    req.add_header("Content-Type", f"multipart/form-data; boundary={boundary}")
 
     try:
-        with urllib.request.urlopen(req, timeout=60) as resp:
+        with urllib.request.urlopen(req, timeout=90) as resp:
             raw = resp.read()
     except urllib.error.HTTPError as e:
         err_body = e.read().decode(errors="replace")
         raise TradingError(
-            f"UploadSiteHostedPictures HTTP {e.code}: {err_body[:500]}"
+            f"picture upload (Media API) HTTP {e.code}: {err_body[:500]}"
         ) from e
 
     try:
-        root = ET.fromstring(raw)
-    except ET.ParseError as e:
-        raise TradingError(f"UploadSiteHostedPictures returned invalid XML: {e}") from e
-
-    ack = root.findtext("e:Ack", default="", namespaces=NS_MAP)
-    if ack not in ("Success", "Warning"):
-        err = root.find("e:Errors", NS_MAP)
-        if err is not None:
-            short = err.findtext("e:ShortMessage", default="", namespaces=NS_MAP)
-            long = err.findtext("e:LongMessage", default="", namespaces=NS_MAP)
-            raise TradingError(f"UploadSiteHostedPictures failed: {short} — {long}")
-        raise TradingError(f"UploadSiteHostedPictures failed with Ack={ack!r}")
-
-    site_hosted = root.find("e:SiteHostedPictureDetails", NS_MAP)
-    if site_hosted is None:
-        raise TradingError("UploadSiteHostedPictures returned no SiteHostedPictureDetails")
-    full_url = _text(site_hosted, "e:FullURL")
-    if not full_url:
-        raise TradingError("UploadSiteHostedPictures returned no FullURL")
-    return full_url
+        data = json.loads(raw or b"{}")
+    except ValueError as e:
+        raise TradingError(f"picture upload (Media API) returned invalid JSON: {e}") from e
+    url = data.get("imageUrl")
+    if not url:
+        raise TradingError(f"picture upload (Media API) returned no imageUrl: {str(data)[:300]}")
+    return url
 
 
 def _guess_mime(path: Path) -> str:
